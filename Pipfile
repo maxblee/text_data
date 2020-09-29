@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+numpy = "*"
+
+[dev-packages]
+bump2version = "*"
+wheel = "*"
+watchdog = "*"
+pylint = "*"
+black = "==20.8b1"
+nox = "*"
+sphinx = "*"
+twine = "*"
+pytest-pylint = "*"
+pytest-cov = "*"
+mypy = "*"
+sphinx-autodoc-typehints = "*"
+faker = "*"
+
+[requires]
+python_version = "3.8"
