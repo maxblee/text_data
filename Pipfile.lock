@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "11abf5e1832e9dd2174d1a2eef70fecfc89caedea684008f21a0fa33d13e063e"
+            "sha256": "33da0b3ca30f1b2c624bade4276846902528a4b562ed2d5d9d54c9049c017438"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -308,16 +308,17 @@
         },
         "isort": {
             "hashes": [
-                "sha256:6187a9f1ce8784cbc6d1b88790a43e6083a6302f03e9ae482acc0f232a98c843",
-                "sha256:c16eaa7432a1c004c585d79b12ad080c6c421dd18fe27982ca11f95e6898e432"
+                "sha256:36f0c6659b9000597e92618d05b72d4181104cf59472b1c6a039e3783f930c95",
+                "sha256:ba040c24d20aa302f78f4747df549573ae1eaf8e1084269199154da9c483f07f"
             ],
-            "version": "==5.5.3"
+            "version": "==5.5.4"
         },
         "jeepney": {
             "hashes": [
                 "sha256:3479b861cc2b6407de5188695fa1a8d57e5072d7059322469b62628869b8e36e",
                 "sha256:d6c6b49683446d2407d2fe3acb7a368a77ff063f9182fe427da15d622adc24cf"
             ],
+            "markers": "sys_platform == 'linux'",
             "version": "==0.4.3"
         },
         "jinja2": {
@@ -397,6 +398,19 @@
                 "sha256:e8313f01ba26fbbe36c7be1966a7b7424942f670f38e666995b88d012765b9be"
             ],
             "version": "==1.1.1"
+        },
+        "maturin": {
+            "hashes": [
+                "sha256:0989bcd525a1cf0af0966924f139a88688b76c4c60446203c8014f3a757ef373",
+                "sha256:695620e280a45919a30a064eb2f6f7e15862cea1f7ed0e9c9581624aa27e0e7f",
+                "sha256:750a0b009e8cd0a5fa085f27242e91b81545964301d06da354433675cdf146ad",
+                "sha256:7cfbfed827d75e148297f747f979a4362bb94582221196bae85834a9e17b5186",
+                "sha256:7e68fd4eb163c30e7285e8002762ba295251d8882a81c3e8af99b4f9bc23c3d5",
+                "sha256:c4916d17a8f0f8fc8d712af372dfc5eb4544e73044ecb9d5fca940b5c121bb88",
+                "sha256:e5816daa6e3bc09f01d33f7dfb26f4d5d2b44dd00253896cd773f367537d81d5"
+            ],
+            "index": "pypi",
+            "version": "==0.8.3"
         },
         "mccabe": {
             "hashes": [
