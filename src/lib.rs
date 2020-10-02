@@ -10,9 +10,11 @@
 //! matching text.)
 use genawaiter::stack::let_gen;
 use genawaiter::yield_;
+use ngrams::Ngrams;
 use pyo3::class::mapping::PyMappingProtocol;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
 
 use std::collections::{BTreeMap, HashSet};
 use std::iter::FromIterator;
@@ -135,6 +137,11 @@ impl PositionalIndex {
         self.vocab_size = self.index.len();
         self.num_documents += documents.len();
         Ok(())
+    }
+
+    /// Gets all of the words in the corpus.
+    fn vocabulary(&self) -> HashSet<String> {
+        HashSet::from_iter(self.index.keys().cloned())
     }
 
     /// Count the total number of times a word has appeared
@@ -437,10 +444,80 @@ impl PartialEq for Position {
     }
 }
 
+/// Takes a list of documents (where each document is a word) and builds n-grams from it.
+/// 
+/// Args:
+///     documents: A list of documents where each document is a list of words
+///     n: The n-gram size
+///     sep: The separator between words. Defaults to a space.
+///     prefix: The prefix before the first word (e.g. an opening tag) in each n-gram
+///     suffix: The suffix after the last word (e.g. a closing tag) in each n-gram
+#[pyfunction]
+fn ngrams_from_documents(
+    documents: Vec<Vec<String>>, 
+    n: Option<usize>,
+    sep: Option<&str>,
+    prefix: Option<String>,
+    suffix: Option<String>
+) -> Vec<Vec<String>> {
+    let mut ngram_docs = Vec::new();
+    for document in documents {
+        ngram_docs.push(ngram(document, n.clone(), sep.clone(), prefix.clone(), suffix.clone()))
+    }
+    ngram_docs
+}
+/// Takes a list of words and transforms it into a list of n-grams
+/// 
+/// # Arguments
+/// * `document`: A list of words (representing a single document in PositionalIndex)
+/// * `n`: The n-gram size. If unspecified, defaults to 1
+/// * `sep`: The separator between words. Default is a space.
+/// * `prefix`: The prefix before the first word (e.g. an opening tag)
+/// * `suffix`: The suffix after the last word (e.g. a closing tag) 
+#[pyfunction]
+fn ngram(
+        document: Vec<String>, 
+        n: Option<usize>, 
+        sep: Option<&str>, 
+        prefix: Option<String>, 
+        suffix: Option<String>
+) -> Vec<String> {
+    let gram_count = n.unwrap_or(1);
+    let joiner = sep.unwrap_or(" ");
+    let pre = prefix.unwrap_or(String::new());
+    let post = suffix.unwrap_or(String::new());
+    match gram_count {
+        // technically, Ngrams works identically on empty vectors, but this allows x.first().unwrap()
+        // to not panic.
+        _ if document.len() == 0 => document,
+        // for some reason Ngrams doesn't work well on documents with n=1
+        0..=1 => document,
+        // NGrams panics if the number of n-grams is larger than the size of the vector
+        d if d > document.len() => vec![],
+        _ => {
+            Ngrams::new(document.into_iter(), gram_count)
+                .map(|mut v| {
+                    let first_or_none = v.first_mut();
+                    // this adds a prefix + suffix to each element
+                    if let Some(first_elem) = first_or_none {
+                        *first_elem = pre.clone() + first_elem;
+                        // last_mut is only None if first_mut is None
+                        let last_elem = v.last_mut().unwrap();
+                        *last_elem += &post;
+                    }
+                    v.join(&joiner)
+                })
+                .collect()
+        }
+    }
+}
+
 /// This module forms the Rust core of `text_data`.
 #[pymodule]
 fn text_data_rs(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PositionalIndex>()?;
+    m.add_function(wrap_pyfunction!(ngram, m)?)?;
+    m.add_function(wrap_pyfunction!(ngrams_from_documents, m)?)?;
     Ok(())
 }
 
@@ -494,5 +571,28 @@ mod tests {
             &vec!["pie".to_string(), "apple".to_string()]
         );
         assert!(reverse_order.is_empty());
+    }
+
+    #[test]
+    fn test_ngram() {
+        let sent = vec!["<s>".to_string(), "I".to_string(), "like".to_string(), "Rust".to_string(), "</s>".to_string()];
+        let sent_bigram = ngram(sent, Some(2), Some("</w><w>"), Some("<w>".to_string()), Some("</w>".to_string()));
+        let expected = vec![
+            "<w><s></w><w>I</w>".to_string(),
+            "<w>I</w><w>like</w>".to_string(),
+            "<w>like</w><w>Rust</w>".to_string(),
+            "<w>Rust</w><w></s></w>".to_string()
+        ];
+        assert_eq!(
+           sent_bigram, 
+           expected           
+        );
+        // empty vectors should produce empty vectors
+        assert_eq!(ngram(vec![], None, None, None, None), Vec::<String>::new());
+        // when there are no valid n-grams, it should also produce empty vectors
+        assert_eq!(
+            ngram(vec!["Happy".to_string(), "Birthday".to_string()], Some(5), None, None, None), 
+            Vec::<String>::new()
+        );
     }
 }

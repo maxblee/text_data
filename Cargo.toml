@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 genawaiter = "0.99.1"
+ngrams = "1.0.1"
 
 [dependencies.pyo3]
 version = "0.12.1"
