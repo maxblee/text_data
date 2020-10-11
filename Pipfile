@@ -5,6 +5,7 @@ name = "pypi"
 
 [packages]
 numpy = "*"
+ipython = "*"
 
 [dev-packages]
 bump2version = "*"

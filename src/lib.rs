@@ -16,10 +16,10 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
 use std::iter::FromIterator;
 use std::ops::Not;
-use std::cmp::Ordering;
 /// A positional index, designed for cache-efficient performant searching.
 ///
 /// This allows you to quickly search for phrases within a list of documents
@@ -102,7 +102,10 @@ impl PositionalIndex {
                 )));
             }
         }
+        // need starting length so updates add documents with new ids
+        let starting_id = self.num_documents;
         for (doc_index, words) in documents.iter().enumerate() {
+            let document_id = doc_index + starting_id;
             if let Some(index_locations) = &indexes {
                 // unwrap won't panic because of if let check above
                 let num_indexes = index_locations.get(doc_index).unwrap().len();
@@ -130,7 +133,7 @@ impl PositionalIndex {
                 self.index
                     .entry(word.clone())
                     .or_insert(TermIndex::default())
-                    .update(doc_index, word_position);
+                    .update(document_id, word_position);
                 self.num_words += 1;
             }
         }
@@ -144,20 +147,37 @@ impl PositionalIndex {
         HashSet::from_iter(self.index.keys().cloned())
     }
 
+    /// Show the most commonly appearing words
+    ///
+    /// If num_words is left unspecified, returns all words.
+    fn most_common(&self, num_words: Option<usize>) -> Vec<(String, usize)> {
+        let mut word_counts = Vec::new();
+        for (word, term_info) in self.index.iter() {
+            word_counts.push((word.clone(), term_info.term_count));
+        }
+        word_counts.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        word_counts
+            .into_iter()
+            // return the first n | vocab results
+            .take(num_words.unwrap_or(self.vocab_size))
+            .collect()
+    }
+
     /// Count the total number of times a word has appeared
-    /// 
+    ///
     /// This is based on `nltk.probability.FreqDist.count
-    fn term_count(&self, word: &str) -> usize {
-        self.index.get(word)
+    fn word_count(&self, word: &str) -> usize {
+        self.index
+            .get(word)
             .map(|v| v.term_count.clone())
             .unwrap_or(0)
     }
 
     /// Report the frequency in which a word appeared
-    /// 
+    ///
     /// This is based on `nltk.probability.FreqDist.freq
-    fn term_frequency(&self, word: &str) -> f64 {
-        self.term_count(word) as f64 / self.num_words as f64
+    fn word_frequency(&self, word: &str) -> f64 {
+        self.word_count(word) as f64 / self.num_words as f64
     }
 
     /// Count the number of documents a word has appeared in
@@ -170,23 +190,38 @@ impl PositionalIndex {
         self.document_count(word) as f64 / self.num_documents as f64
     }
 
+    /// Report the total number of times a word appears in a document
+    fn term_count(&self, word: &str, document: usize) -> usize {
+        self.index
+            .get(word)
+            .map(|v| v.postings.get(&document).map_or(0, |doc| doc.len()))
+            .unwrap_or(0)
+    }
+
     /// Searches for all of the documents where a given set of words appears
-    /// 
+    ///
     /// This is not an exact phrase match; instead, it just finds
     /// examples where *one* of the words appears in the document.
     fn find_documents_with_words(&self, search_terms: Vec<String>) -> PyResult<HashSet<usize>> {
         Ok(self.get_matching_documents(&search_terms))
     }
 
+    fn find_wordlist_positions(
+        &self,
+        search_terms: Vec<String>,
+    ) -> HashSet<(usize, usize, usize, Option<usize>, Option<usize>)> {
+        self.get_inexact_positions(&search_terms)
+    }
+
     /// Finds all matching occurrences of a phrase.
-    /// 
-    /// Includes information about the phrase's (document id, 
+    ///
+    /// Includes information about the phrase's (document id,
     /// the starting index of the word, the starting index within the raw document,
     /// and the ending index within the raw document)
-    fn find_exact_phrase_matches(
-        &self, 
-        search_terms: Vec<String>
-    ) -> PyResult<HashSet<(usize, usize, Option<usize>, Option<usize>)>> {
+    fn find_phrase_positions(
+        &self,
+        search_terms: Vec<String>,
+    ) -> PyResult<HashSet<(usize, usize, usize, Option<usize>, Option<usize>)>> {
         Ok(self.get_matching_phrases(&search_terms))
     }
 
@@ -209,13 +244,44 @@ impl PyMappingProtocol for PositionalIndex {
 }
 
 impl PositionalIndex {
+    /// Finds all of the positions for documents containing the set of words.
+    ///
+    /// Returns results in form of (doc_id, first index, last index, raw start index, raw end index)
+    fn get_inexact_positions(
+        &self,
+        search_terms: &Vec<String>,
+    ) -> HashSet<(usize, usize, usize, Option<usize>, Option<usize>)> {
+        let mut matches = HashSet::new();
+        let matching_documents = self.get_matching_documents(search_terms);
+        for document in matching_documents {
+            for term in search_terms {
+                let matching_term = self.index.get(term);
+                if let Some(term_idx) = matching_term {
+                    let matching_positions = term_idx.postings.get(&document);
+                    if let Some(positions) = matching_positions {
+                        for position in positions {
+                            matches.insert((
+                                document,
+                                position.idx,
+                                position.idx,
+                                position.start_idx,
+                                position.end_idx,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        matches
+    }
+
     /// Creates an iterator of matching phrases
-    /// 
-    /// Returns results in form of (doc_id, first index, raw start index, raw end index)
+    ///
+    /// Returns results in form of (doc_id, first index, last index, raw start index, raw end index)
     fn get_matching_phrases(
-        &self, 
-        search_terms: &Vec<String>
-    ) -> HashSet<(usize, usize, Option<usize>, Option<usize>)> {
+        &self,
+        search_terms: &Vec<String>,
+    ) -> HashSet<(usize, usize, usize, Option<usize>, Option<usize>)> {
         let matching_documents = self.get_matching_documents(search_terms);
         let search_order = self.get_search_terms(search_terms);
         let_gen!(matching_phrases, {
@@ -224,52 +290,57 @@ impl PositionalIndex {
             if let Some(search_items) = search_order {
                 if let Some((first_item, remaining_terms)) = search_items.split_first() {
                     let first_term = search_terms.get(*first_item).unwrap();
-                    let first_postings = self
-                        .index.get(first_term)
-                        .unwrap();
+                    let first_postings = self.index.get(first_term).unwrap();
                     let last_postings = self
                         .index
                         .get(search_terms.get(*search_items.last().unwrap()).unwrap())
                         .unwrap();
                     let mut possible_values = self.get_formatted_postings(
-                        first_postings, 
-                        &matching_documents, 
-                        first_item
+                        first_postings,
+                        &matching_documents,
+                        first_item,
                     );
                     for term in remaining_terms {
-                        let term_postings = self
-                            .index.get(search_terms.get(*term).unwrap())
-                            .unwrap();
+                        let term_postings =
+                            self.index.get(search_terms.get(*term).unwrap()).unwrap();
                         // // get_formatted_postings returns a HashSet of document ids
                         // // and the index of the first search term (assuming it's a match)
-                        let term_values = self.get_formatted_postings(
-                            term_postings,
-                            &matching_documents,
-                            term
-                        );
-                        possible_values = possible_values.intersection(&term_values)
-                            .copied().collect();
+                        let term_values =
+                            self.get_formatted_postings(term_postings, &matching_documents, term);
+                        possible_values = possible_values
+                            .intersection(&term_values)
+                            .copied()
+                            .collect();
                     }
                     for (doc_idx, first_index) in possible_values {
                         // values iterated over intersected (document, start_idx) values so unwrap fine
                         let first_positions = self
-                            .index.get(search_terms.first().unwrap())
+                            .index
+                            .get(search_terms.first().unwrap())
                             .unwrap()
-                            .postings.get(&doc_idx).unwrap();
+                            .postings
+                            .get(&doc_idx)
+                            .unwrap();
                         let last_positions = self
-                            .index.get(search_terms.last().unwrap())
+                            .index
+                            .get(search_terms.last().unwrap())
                             .unwrap()
-                            .postings.get(&doc_idx).unwrap();
+                            .postings
+                            .get(&doc_idx)
+                            .unwrap();
                         let start_idx = first_positions
-                            .binary_search_by_key(&first_index, |a| a.idx).unwrap();
+                            .binary_search_by_key(&first_index, |a| a.idx)
+                            .unwrap();
                         let last_index = &first_index + search_terms.len() - 1;
                         let last_idx = last_positions
-                            .binary_search_by_key(&last_index, |a| a.idx).unwrap();
+                            .binary_search_by_key(&last_index, |a| a.idx)
+                            .unwrap();
                         let full_tuple_val = (
                             doc_idx.clone(),
                             first_index.clone(),
+                            last_index.clone(),
                             first_positions.get(start_idx).unwrap().start_idx,
-                            last_positions.get(last_idx).unwrap().end_idx
+                            last_positions.get(last_idx).unwrap().end_idx,
                         );
                         yield_!(full_tuple_val);
                     }
@@ -280,7 +351,7 @@ impl PositionalIndex {
     }
 
     /// Gets a list of potential postings for a word given its term index and the set of matching documents
-    /// 
+    ///
     /// This is a helper function for `get_matching_phrases` and produces the same output as that.
     /// (with the caveat that the start and end raw indexes are passed as tuple parameters instead of as
     /// hashset parameters)
@@ -445,7 +516,7 @@ impl PartialEq for Position {
 }
 
 /// Takes a list of documents (where each document is a word) and builds n-grams from it.
-/// 
+///
 /// Args:
 ///     documents: A list of documents where each document is a list of words
 ///     n: The n-gram size
@@ -454,33 +525,39 @@ impl PartialEq for Position {
 ///     suffix: The suffix after the last word (e.g. a closing tag) in each n-gram
 #[pyfunction]
 fn ngrams_from_documents(
-    documents: Vec<Vec<String>>, 
+    documents: Vec<Vec<String>>,
     n: Option<usize>,
     sep: Option<&str>,
     prefix: Option<String>,
-    suffix: Option<String>
+    suffix: Option<String>,
 ) -> Vec<Vec<String>> {
     let mut ngram_docs = Vec::new();
     for document in documents {
-        ngram_docs.push(ngram(document, n.clone(), sep.clone(), prefix.clone(), suffix.clone()))
+        ngram_docs.push(ngram(
+            document,
+            n.clone(),
+            sep.clone(),
+            prefix.clone(),
+            suffix.clone(),
+        ))
     }
     ngram_docs
 }
 /// Takes a list of words and transforms it into a list of n-grams
-/// 
+///
 /// # Arguments
 /// * `document`: A list of words (representing a single document in PositionalIndex)
 /// * `n`: The n-gram size. If unspecified, defaults to 1
 /// * `sep`: The separator between words. Default is a space.
 /// * `prefix`: The prefix before the first word (e.g. an opening tag)
-/// * `suffix`: The suffix after the last word (e.g. a closing tag) 
+/// * `suffix`: The suffix after the last word (e.g. a closing tag)
 #[pyfunction]
 fn ngram(
-        document: Vec<String>, 
-        n: Option<usize>, 
-        sep: Option<&str>, 
-        prefix: Option<String>, 
-        suffix: Option<String>
+    document: Vec<String>,
+    n: Option<usize>,
+    sep: Option<&str>,
+    prefix: Option<String>,
+    suffix: Option<String>,
 ) -> Vec<String> {
     let gram_count = n.unwrap_or(1);
     let joiner = sep.unwrap_or(" ");
@@ -551,7 +628,7 @@ mod tests {
         let documents = vec![
             vec!["apple", "pie", "is", "good"],
             vec!["i", "like", "apple", "pie"],
-            vec!["no", "thanks"]
+            vec!["no", "thanks"],
         ]
         .iter()
         .map(|v| v.iter().map(|doc| doc.to_string()).collect())
@@ -561,37 +638,50 @@ mod tests {
         let no_word_query = index.get_matching_phrases(&vec!["nonsense".to_string()]);
         assert!(no_word_query.is_empty());
         // querying a phrase that exists should work
-        let matching_query = index.get_matching_phrases(
-            &vec!["apple".to_string(), "pie".to_string()]
-        );
+        let matching_query =
+            index.get_matching_phrases(&vec!["apple".to_string(), "pie".to_string()]);
         let expected = vec![(0, 0, None, None), (1, 2, None, None)];
         assert_eq!(matching_query, HashSet::from_iter(expected.iter().cloned()));
         // querying a set of documents that doesn't exist (but where words do) should be empty
-        let reverse_order = index.get_matching_phrases(
-            &vec!["pie".to_string(), "apple".to_string()]
-        );
+        let reverse_order =
+            index.get_matching_phrases(&vec!["pie".to_string(), "apple".to_string()]);
         assert!(reverse_order.is_empty());
     }
 
     #[test]
     fn test_ngram() {
-        let sent = vec!["<s>".to_string(), "I".to_string(), "like".to_string(), "Rust".to_string(), "</s>".to_string()];
-        let sent_bigram = ngram(sent, Some(2), Some("</w><w>"), Some("<w>".to_string()), Some("</w>".to_string()));
+        let sent = vec![
+            "<s>".to_string(),
+            "I".to_string(),
+            "like".to_string(),
+            "Rust".to_string(),
+            "</s>".to_string(),
+        ];
+        let sent_bigram = ngram(
+            sent,
+            Some(2),
+            Some("</w><w>"),
+            Some("<w>".to_string()),
+            Some("</w>".to_string()),
+        );
         let expected = vec![
             "<w><s></w><w>I</w>".to_string(),
             "<w>I</w><w>like</w>".to_string(),
             "<w>like</w><w>Rust</w>".to_string(),
-            "<w>Rust</w><w></s></w>".to_string()
+            "<w>Rust</w><w></s></w>".to_string(),
         ];
-        assert_eq!(
-           sent_bigram, 
-           expected           
-        );
+        assert_eq!(sent_bigram, expected);
         // empty vectors should produce empty vectors
         assert_eq!(ngram(vec![], None, None, None, None), Vec::<String>::new());
         // when there are no valid n-grams, it should also produce empty vectors
         assert_eq!(
-            ngram(vec!["Happy".to_string(), "Birthday".to_string()], Some(5), None, None, None), 
+            ngram(
+                vec!["Happy".to_string(), "Birthday".to_string()],
+                Some(5),
+                None,
+                None,
+                None
+            ),
             Vec::<String>::new()
         );
     }

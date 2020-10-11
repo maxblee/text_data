@@ -3,6 +3,8 @@ import collections
 import re
 from typing import Callable, List
 
+from text_data import tokenize
+
 QUERY_TERMS = {"AND", "OR", "NOT"}
 QueryItem = collections.namedtuple("QueryItem", "words exact modifier")
 
@@ -28,14 +30,23 @@ class Query:
     Args:
         query_string: The human-readable query
         query_tokenizer: A function to tokenize phrases in the query
-            (Defaults to string.split)
+            (Defaults to string.split).
+            **Note:** This specifically tokenizes individual phrases in the query.
+            As a result, the function does not need to handle quotations.
     """
 
     def __init__(
-        self, query_string: str, query_tokenizer: Callable[[str], List[str]] = str.split
+        self,
+        query_string: str,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
     ):
+        # starting with a key word should raise an error
+        if (
+            re.search(fr"^\s*({'|'.join(QUERY_TERMS)})(?:\s+|$)", query_string)
+            is not None
+        ):
+            raise ValueError("You cannot use a keyword at the beginning of the query")
         # this holds outputs of queries, as set objects
-        self.data = set()
         self.queries = []
         self.raw_query = query_string
         current_idx = 0
@@ -43,18 +54,22 @@ class Query:
         last_modifier = "OR"
         term_regex = re.compile(fr"\s+({'|'.join(QUERY_TERMS)})\s+")
         for term in term_regex.finditer(query_string):
-            query_items = query_string[current_idx : term.start()]
-            self.queries.append(self._parse_subquery(query_items, last_modifier))
+            query_items = query_string[current_idx : term.start()].strip()
+            self.queries.append(
+                self._parse_subquery(query_items, last_modifier, query_tokenizer)
+            )
             last_modifier = term.group(1)
             current_idx = term.end()
         end_query = query_string[current_idx:].strip()
-        self.queries.append(self._parse_subquery(end_query, last_modifier))
+        self.queries.append(
+            self._parse_subquery(end_query, last_modifier, query_tokenizer)
+        )
 
     def _parse_subquery(
         self,
         query: str,
         last_modifier: str,
-        query_tokenizer: Callable[[str], List[str]] = str.split,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
     ) -> List[QueryItem]:
         """This parses queries between QUERY_TERM objects. Internal to init.
 
@@ -65,7 +80,9 @@ class Query:
         """
         matches = []
         current_idx = 0
-        quote_regex = re.compile(r"(?:\s|^)(\'(?P<single>[^\']+)\'|\"(?P<double>[^\"]+)\")(?:\s|$)")
+        quote_regex = re.compile(
+            r"(?:\s|^)(\'(?P<single>[^\']+)\'|\"(?P<double>[^\"]+)\")(?:\s|$)"
+        )
         for exact_match in quote_regex.finditer(query):
             single_quote = exact_match.group("single")
             double_quote = exact_match.group("double")
@@ -75,9 +92,7 @@ class Query:
                 matches.append(
                     QueryItem(query_tokenizer(pre_match), False, last_modifier)
                 )
-            matches.append(
-                QueryItem(query_tokenizer(quoted_matl), True, last_modifier)
-            )
+            matches.append(QueryItem(query_tokenizer(quoted_matl), True, last_modifier))
             current_idx = exact_match.end()
         post_match = query[current_idx:].strip()
         if post_match != "":

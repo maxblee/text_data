@@ -50,8 +50,8 @@ clean-test: ## remove test and coverage artifacts
 lint: ## check style with pylint
 	cargo fmt
 	black .
-	pylint text_data tests
-	mypy text_data tests
+	flake8 text_data tests
+	mypy text_data
 
 test: ## run tests quickly with the default Python
 	# no-default-features because of https://pyo3.rs/v0.11.1/faq.html#i-cant-run-cargo-test-im-having-linker-issues-like-symbol-not-found-or-undefined-reference-to-_pyexc_systemerror
