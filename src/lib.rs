@@ -210,7 +210,8 @@ impl PositionalIndex {
                 document
             )));
         }
-        let result = self.index
+        let result = self
+            .index
             .get(word)
             .map(|v| v.postings.get(&document).map_or(0, |doc| doc.len()))
             .unwrap_or(0);
@@ -234,10 +235,7 @@ impl PositionalIndex {
     /// Includes information about the phrase's (document id,
     /// the starting index of the word, the starting index within the raw document,
     /// and the ending index within the raw document)
-    fn find_phrase_positions(
-        &self,
-        search_terms: Vec<String>,
-    ) -> HashSet<PositionResult> {
+    fn find_phrase_positions(&self, search_terms: Vec<String>) -> HashSet<PositionResult> {
         self.get_matching_phrases(&search_terms)
     }
 
@@ -595,18 +593,18 @@ fn text_data_rs(_py: Python, m: &PyModule) -> PyResult<()> {
 #[cfg(not(tarpaulin_include))]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
     use counter::Counter;
+    use proptest::prelude::*;
 
     fn generate_fake_documents() -> impl Strategy<Value = Vec<Vec<String>>> {
         prop::collection::vec(prop::collection::vec(".*", 0..20), 0..20)
     }
 
-    fn build_counter(documents: &Vec<Vec<String>>) -> Counter<String, usize> {
+    fn build_counter(documents: &[Vec<String>]) -> Counter<String, usize> {
         // builds a Counter object from a set of documents
         let mut counter = Counter::new();
         for document in documents {
-            let new_counter : Counter<String, usize> = document.iter().cloned().collect();
+            let new_counter: Counter<String, usize> = document.iter().cloned().collect();
             counter += new_counter;
         }
         counter
@@ -880,9 +878,19 @@ mod tests {
         let mut index = PositionalIndex::new(None, None).unwrap();
         assert_eq!(index.vocabulary(), HashSet::new());
         let new_docs = vec![
-            vec!["these".to_string(), "are".to_string(), "sample".to_string(), "documents".to_string()],
-            vec!["this".to_string(), "is".to_string(), "another".to_string(), "document".to_string()],
-            vec!["sample".to_string(), "document".to_string()]
+            vec![
+                "these".to_string(),
+                "are".to_string(),
+                "sample".to_string(),
+                "documents".to_string(),
+            ],
+            vec![
+                "this".to_string(),
+                "is".to_string(),
+                "another".to_string(),
+                "document".to_string(),
+            ],
+            vec!["sample".to_string(), "document".to_string()],
         ];
         index.add_documents(new_docs, None).unwrap();
         let expected = vec![
@@ -893,69 +901,84 @@ mod tests {
             "this".to_string(),
             "is".to_string(),
             "another".to_string(),
-            "document".to_string()
-        ].iter().cloned().collect();
+            "document".to_string(),
+        ]
+        .iter()
+        .cloned()
+        .collect();
         assert_eq!(index.vocabulary(), expected);
     }
 
     #[test]
-        fn test_most_common() {
-            let documents = vec![
-                vec!["is".to_string(), "a".to_string(), "a".to_string()],
-                vec!["a".to_string(), "or".to_string(), "is".to_string()]
-            ];
-            let index = PositionalIndex::new(Some(documents), None).unwrap();
-            let expected = vec![("a".to_string(), 3), ("is".to_string(), 2), ("or".to_string(), 1)];
-            assert_eq!(index.most_common(None), expected.clone());
-            assert_eq!(index.most_common(Some(1)), vec![("a".to_string(), 3)]);
-            assert_eq!(index.most_common(Some(2)), vec![("a".to_string(), 3), ("is".to_string(), 2)]);
-            assert_eq!(index.most_common(Some(3)), expected.clone());
-            assert_eq!(index.most_common(Some(1000)), expected);
-        }
+    fn test_most_common() {
+        let documents = vec![
+            vec!["is".to_string(), "a".to_string(), "a".to_string()],
+            vec!["a".to_string(), "or".to_string(), "is".to_string()],
+        ];
+        let index = PositionalIndex::new(Some(documents), None).unwrap();
+        let expected = vec![
+            ("a".to_string(), 3),
+            ("is".to_string(), 2),
+            ("or".to_string(), 1),
+        ];
+        assert_eq!(index.most_common(None), expected);
+        assert_eq!(index.most_common(Some(1)), vec![("a".to_string(), 3)]);
+        assert_eq!(
+            index.most_common(Some(2)),
+            vec![("a".to_string(), 3), ("is".to_string(), 2)]
+        );
+        assert_eq!(index.most_common(Some(3)), expected);
+        assert_eq!(index.most_common(Some(1000)), expected);
+    }
 
-        #[test]
-        fn test_word_count_invalid_is_0() {
-            // if you try to get the count of a word that isn't in the vocabulary, you should get 0
-            let index = PositionalIndex::new(None, None).unwrap();
-            assert_eq!(index.word_count("nonsense"), 0);
-        }
+    #[test]
+    fn test_word_count_invalid_is_0() {
+        // if you try to get the count of a word that isn't in the vocabulary, you should get 0
+        let index = PositionalIndex::new(None, None).unwrap();
+        assert_eq!(index.word_count("nonsense"), 0);
+    }
 
-        #[test]
-        fn test_document_count() {
-            // makes sure getting the number of documents a word appeared in works
-            let documents = vec![
-                vec!["the".to_string(), "example".to_string()],
-                vec!["the".to_string(), "document".to_string()],
-                vec!["example".to_string()]
-            ];
-            let index = PositionalIndex::new(Some(documents), None).unwrap();
-            assert_eq!(index.document_count("the"), 2);
-            assert_eq!(index.document_count("example"), 2);
-            assert_eq!(index.document_count("document"), 1);
-            assert_eq!(index.document_count("nonsense"), 0);
-        }
+    #[test]
+    fn test_document_count() {
+        // makes sure getting the number of documents a word appeared in works
+        let documents = vec![
+            vec!["the".to_string(), "example".to_string()],
+            vec!["the".to_string(), "document".to_string()],
+            vec!["example".to_string()],
+        ];
+        let index = PositionalIndex::new(Some(documents), None).unwrap();
+        assert_eq!(index.document_count("the"), 2);
+        assert_eq!(index.document_count("example"), 2);
+        assert_eq!(index.document_count("document"), 1);
+        assert_eq!(index.document_count("nonsense"), 0);
+    }
 
-        #[test]
-        fn test_term_count() {
-            // makes sure getting the total number of times a word appears in a document works
-            let documents = vec![
-                vec!["a".to_string(), "a".to_string(), "b".to_string(), "a".to_string()],
-                vec!["b".to_string(), "a".to_string(), "b".to_string()],
-                vec!["c".to_string()]
-            ];
-            let index = PositionalIndex::new(Some(documents), None).unwrap();
-            // you must enter a valid document index
-            assert!(index.term_count("a", 100).is_err());
-            assert_eq!(index.term_count("a", 0).unwrap(), 3);
-            assert_eq!(index.term_count("a", 1).unwrap(), 1);
-            assert_eq!(index.term_count("a", 2).unwrap(), 0);
-            assert_eq!(index.term_count("b", 0).unwrap(), 1);
-            assert_eq!(index.term_count("b", 1).unwrap(), 2);
-            assert_eq!(index.term_count("b", 2).unwrap(), 0);
-            assert_eq!(index.term_count("c", 0).unwrap(), 0);
-            assert_eq!(index.term_count("c", 1).unwrap(), 0);
-            assert_eq!(index.term_count("c", 2).unwrap(), 1);
-        }
+    #[test]
+    fn test_term_count() {
+        // makes sure getting the total number of times a word appears in a document works
+        let documents = vec![
+            vec![
+                "a".to_string(),
+                "a".to_string(),
+                "b".to_string(),
+                "a".to_string(),
+            ],
+            vec!["b".to_string(), "a".to_string(), "b".to_string()],
+            vec!["c".to_string()],
+        ];
+        let index = PositionalIndex::new(Some(documents), None).unwrap();
+        // you must enter a valid document index
+        assert!(index.term_count("a", 100).is_err());
+        assert_eq!(index.term_count("a", 0).unwrap(), 3);
+        assert_eq!(index.term_count("a", 1).unwrap(), 1);
+        assert_eq!(index.term_count("a", 2).unwrap(), 0);
+        assert_eq!(index.term_count("b", 0).unwrap(), 1);
+        assert_eq!(index.term_count("b", 1).unwrap(), 2);
+        assert_eq!(index.term_count("b", 2).unwrap(), 0);
+        assert_eq!(index.term_count("c", 0).unwrap(), 0);
+        assert_eq!(index.term_count("c", 1).unwrap(), 0);
+        assert_eq!(index.term_count("c", 2).unwrap(), 1);
+    }
 
     proptest! {
         #[test]
@@ -965,7 +988,7 @@ mod tests {
             let index = PositionalIndex::new(Some(documents), None).unwrap();
             assert_eq!(index.__len__(), num_docs);
             assert_eq!(index.num_documents, num_docs);
-        } 
+        }
 
         #[test]
         fn test_word_count_existing(documents in generate_fake_documents()) {

@@ -23,6 +23,4 @@ maturin = "*"
 flake8 = "*"
 pytest-flake8 = "*"
 flake8-docstrings = "*"
-
-[requires]
-python_version = "3.8"
+atomicwrites = "*"
