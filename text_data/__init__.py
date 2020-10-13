@@ -338,7 +338,7 @@ class Corpus(WordIndex):
             allows you to optionally search for words in your index that include
             spaces (since it defaults to string.split).
         """
-        return self._search_item(
+        return self._search_item(   # type: ignore
             self._yield_subquery_document_results,  # type: ignore
             Query(query, query_tokenizer),
         )
@@ -367,8 +367,8 @@ class Corpus(WordIndex):
             the ending index of the match,
             the starting index of the text (within self.documents), and the ending index of the text.
         """
-        return self._search_item(
-            self._yield_subquery_phrase_results,  # type: ignore
+        return self._search_item(   # type: ignore
+            self._yield_subquery_phrase_results,    # type: ignore
             Query(query, query_tokenizer),
         )
 
