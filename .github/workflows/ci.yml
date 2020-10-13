@@ -42,7 +42,7 @@ jobs:
   python-tests:
   # python tests
     runs-on: ${{ matrix.os }}
-    needs: lint
+    needs: rust-tests
     strategy:
       fail-fast: false
       matrix:
