@@ -1,0 +1,28 @@
+[package]
+name = "text_data_rs"
+version = "0.1.0"
+authors = ["Max Lee <maxbmhlee@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "text_data_rs"
+crate-type = ["cdylib"]
+
+[profile.dev]
+opt-level = 3
+
+[dependencies]
+ngrams = "1.0.1"
+
+[dependencies.pyo3]
+version = "0.12.1"
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]
+
+[dev-dependencies]
+counter = "0.5.2"
+proptest = "0.10.1"

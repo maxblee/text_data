@@ -1,0 +1,85 @@
+# ported from hyperjson
+# https://github.com/mre/hyperjson/blob/master/.github/workflows/ci.yml
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+# rust tests
+  rust-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Install cargo
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+
+      - name: Lint with rustfmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+
+      - name: Lint with clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets --all-features
+
+      - name: Test with cargo
+        uses: actions-rs/cargo@v1.0.1
+        with:
+          command: test
+          # needed because of https://github.com/PyO3/pyo3/issues/341
+          args: --no-default-features
+
+  python-tests:
+  # python tests
+    runs-on: ${{ matrix.os }}
+    needs: rust-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.7, 3.8]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pipenv
+        uses: dschep/install-pipenv-action@v1
+
+      - name: Install cargo
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      
+      - name: Install dependencies
+        run: |
+         pipenv install
+         pipenv install --dev
+
+      - name: Build Python package
+        run: pipenv run maturin develop
+
+      - name: Run linting
+        run: |
+          pipenv run black .
+          pipenv run flake8 text_data tests
+          pipenv run mypy text_data
+
+      - name: pytest
+        run: pipenv run pytest

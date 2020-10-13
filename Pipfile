@@ -5,21 +5,23 @@ name = "pypi"
 
 [packages]
 numpy = "*"
+ipython = "*"
 
 [dev-packages]
 bump2version = "*"
 wheel = "*"
 watchdog = "*"
-pylint = "*"
 black = "==20.8b1"
 nox = "*"
-sphinx = "*"
+Sphinx = "*"
 twine = "*"
-pytest-pylint = "*"
 pytest-cov = "*"
 mypy = "*"
 sphinx-autodoc-typehints = "*"
-faker = "*"
-
-[requires]
-python_version = "3.8"
+Faker = "*"
+maturin = "*"
+flake8 = "*"
+pytest-flake8 = "*"
+flake8-docstrings = "*"
+atomicwrites = "*"
+importlib-metadata = "*"
