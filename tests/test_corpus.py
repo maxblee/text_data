@@ -12,6 +12,16 @@ import pytest
 from text_data import Corpus, PositionResult
 
 
+def test_empty_corpus():
+    """Initializing a `Corpus` with no documents should work."""
+    corpus = Corpus([])
+    assert len(corpus) == 0
+    assert corpus.vocab == set()
+    assert corpus.most_common() == []
+    assert corpus.vocab_size == 0
+    assert corpus.num_words == 0
+
+
 def test_basic_initialization():
     """This makes sure that initializing the Corpus works as expected."""
     corpus = Corpus(["I ran to the park with the baseball."])
@@ -207,3 +217,31 @@ def test_html_display():
         "<b>&hellip;</b><b>the</b> <b>dog</b>"
         "</p>"
     )
+
+
+@pytest.mark.parametrize(
+    "query,document_count,occurrence_count,document_freq",
+    [
+        ("food", 4, 6, 4 / 5),
+        ("fight", 3, 3, 3 / 5),
+        ("food fight", 2, 4, 2 / 5),
+        ("'food fight'", 1, 1, 1 / 5),
+    ],
+)
+def test_search_metrics(query, document_count, occurrence_count, document_freq):
+    """Tests how well the search metrics work.
+
+    The metrics are `Corpus.search_document_count`,
+    `Corpus.search_document_freq`, and `Corpus.search_occurrence_count`.
+    """
+    documents = [
+        "the food fight",
+        "the fight for food",
+        "the boxing fight",
+        "the food parade",
+        "food food food",
+    ]
+    corpus = Corpus(documents)
+    assert corpus.search_document_count(query) == document_count
+    assert corpus.search_occurrence_count(query) == occurrence_count
+    assert corpus.search_document_freq(query) == document_freq

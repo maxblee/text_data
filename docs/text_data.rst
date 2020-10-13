@@ -7,7 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   text_data.indexing
+   text_data.core
 
 Submodules
 ----------
