@@ -35,7 +35,7 @@ jobs:
 
       - name: Install dependencies
       # need to install dev dependencies because of maturin
-        run: poetry install
+        run: poetry install -E display
 
       - name: Build Python package
         run: poetry run maturin build --release --no-sdist --strip --interpreter python${{matrix.python_version}}
