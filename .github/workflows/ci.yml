@@ -59,11 +59,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install poetry
-        run: |
-          python -m pip install --upgrade pip
-          curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python
-          echo "::add-path::${HOME}/.poetry/bin"
-          poetry install
+        run: pip install --user poetry
 
       - name: Install cargo
         uses: actions-rs/toolchain@v1
