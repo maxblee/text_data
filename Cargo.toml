@@ -14,7 +14,6 @@ crate-type = ["cdylib"]
 opt-level = 3
 
 [dependencies]
-genawaiter = "0.99.1"
 ngrams = "1.0.1"
 
 [dependencies.pyo3]
@@ -23,3 +22,7 @@ version = "0.12.1"
 [features]
 extension-module = ["pyo3/extension-module"]
 default = ["extension-module"]
+
+[dev-dependencies]
+counter = "0.5.2"
+proptest = "0.10.1"
