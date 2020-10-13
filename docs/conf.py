@@ -33,9 +33,11 @@ import text_data
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = [
+    # napoleon has to be uploaded before type hints
+    # https://github.com/agronholm/sphinx-autodoc-typehints/issues/15
+    "sphinx.ext.napoleon",
     "sphinx.ext.autodoc",
     "sphinx_autodoc_typehints",
-    "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
 ]
 

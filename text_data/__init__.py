@@ -335,8 +335,8 @@ class Corpus(WordIndex):
         Args:
             query: A string boolean query (as defined in `text_data.Query`)
             query_tokenizer: A function to tokenize the words in your query. This
-            allows you to optionally search for words in your index that include
-            spaces (since it defaults to string.split).
+                allows you to optionally search for words in your index that include
+                spaces (since it defaults to string.split).
         """
         return self._search_item(  # type: ignore
             self._yield_subquery_document_results,  # type: ignore
@@ -567,3 +567,45 @@ class Corpus(WordIndex):
                     results += "<b>&hellip;</b>"
                 results += "</p>"
         return results
+
+    def search_document_count(
+        self,
+        query_string: str,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ) -> int:
+        """Finds the total number of documents matching a query.
+
+        By entering a search, you can get the total number of documents
+        that match the query.
+
+        Args:
+            query_string: The query you're searching for
+            query_tokenizer: The tokenizer for the query
+        """
+        return len(self.search_documents(query_string, query_tokenizer))
+
+    def search_document_freq(
+        self,
+        query_string: str,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ) -> float:
+        """Finds the percentage of documents that match a query.
+
+        Args:
+            query_string: The query you're searching for
+            query_tokenizer: The tokenizer for the query
+        """
+        return self.search_document_count(query_string, query_tokenizer) / len(self)
+
+    def search_occurrence_count(
+        self,
+        query_string,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ) -> int:
+        """Finds the total number of matches you have for a query.
+
+        Args:
+            query_string: The query you're searching for
+            query_tokenizer: The tokenizer for the query
+        """
+        return sum(map(len, self.search_occurrences(query_string, query_tokenizer)))
