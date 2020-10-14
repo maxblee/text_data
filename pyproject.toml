@@ -27,17 +27,13 @@ altair = {version = "^4.1.0", optional = true}
 display = ["altair"]
 
 [tool.poetry.dev-dependencies]
-bump2version = "*"
 wheel = "*"
-watchdog = "*"
 black = "==20.8b1"
-nox = "*"
 Sphinx = "*"
 twine = "*"
 pytest-cov = "*"
 mypy = "*"
 sphinx-autodoc-typehints = "*"
-Faker = "*"
 maturin = "*"
 flake8 = "*"
 pytest-flake8 = "*"

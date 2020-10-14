@@ -54,12 +54,15 @@ Before you submit a pull request, please ensure that the following are true:
 
 ## Deploying (for Maintainers)
 
-To deploy, first edit `CHANGELOG.md` to reflect new changes. Then, type
+To deploy, first edit `CHANGELOG.md` to reflect new changes. Then, update the version in `pyproject.toml`.
+Then type
 
 ```bash
-bump2version patch # possible: major / minor / patch
 git push
 git push --tags
 ```
+
+The versioning is in the format `MAJOR.MINOR.PATCH`.
+Git tags are in the form `vMAJOR.MINOR.PATCH`.
 
 This will deploy to PyPI if the tests pass.

@@ -6,7 +6,6 @@ all of the tests for `WordIndex` are in the Rust library.
 But this validates the functionality of searching for documents,
 adding n-gram indexes, and displaying results.
 """
-from faker import Faker
 import pytest
 
 from text_data import Corpus, PositionResult
@@ -66,13 +65,12 @@ def test_ngram_index(sep, prefix, suffix, default, bigram):
 
 def test_update():
     """This makes sure you can update documents."""
-    fake = Faker()
-    corpus = Corpus([fake.paragraph() for _ in range(5)])
+    documents = [["example", "document"] for _ in range(5)]
+    corpus = Corpus(documents)
     assert len(corpus) == 5
     corpus.add_ngram_index(n=2)
     assert len(corpus.ngram_indexes[2]) == 5
-    new_docs = [fake.paragraph() for _ in range(5)]
-    corpus.update(new_docs)
+    corpus.update(documents)
     assert len(corpus) == 10
     assert len(corpus.ngram_indexes[2]) == 10
 
