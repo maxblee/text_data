@@ -24,7 +24,7 @@ ipython = "*"
 altair = {version = "^4.1.0", optional = true}
 
 [tool.poetry.extras]
-display = ["altair"]
+display = ["altair", "pandas"]
 
 [tool.poetry.dev-dependencies]
 wheel = "*"

@@ -218,6 +218,11 @@ impl PositionalIndex {
         Ok(result)
     }
 
+    /// States whether the index has the given word
+    fn has_word(&self, word: &str) -> bool {
+        self.index.contains_key(word)
+    }
+
     /// Searches for all of the documents where a given set of words appears
     ///
     /// This is not an exact phrase match; instead, it just finds

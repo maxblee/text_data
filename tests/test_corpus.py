@@ -12,8 +12,14 @@ from text_data import Corpus, PositionResult
 
 
 def test_empty_corpus():
-    """Initializing a `Corpus` with no documents should work."""
+    """Initializing and updating a `Corpus` with no documents should work."""
     corpus = Corpus([])
+    assert len(corpus) == 0
+    assert corpus.vocab == set()
+    assert corpus.most_common() == []
+    assert corpus.vocab_size == 0
+    assert corpus.num_words == 0
+    corpus.update([])
     assert len(corpus) == 0
     assert corpus.vocab == set()
     assert corpus.most_common() == []
@@ -65,7 +71,7 @@ def test_ngram_index(sep, prefix, suffix, default, bigram):
 
 def test_update():
     """This makes sure you can update documents."""
-    documents = [["example", "document"] for _ in range(5)]
+    documents = ["example document"] * 5
     corpus = Corpus(documents)
     assert len(corpus) == 5
     corpus.add_ngram_index(n=2)
@@ -187,13 +193,14 @@ def test_html_display():
     """This tests `text_data.Corpus.display_search_results`."""
     corpus = Corpus(["The cat ran to the dog", "The dog likes bones"])
     # this should only show one result
-    html_display = corpus._show_html_occurrences("the dog", max_results=1)
+    html_display, num_results = corpus._show_html_occurrences("the dog", max_results=1)
     assert html_display == (
         "<p><b>Showing Result 0 (Document ID 1)</b></p>"
         "<p style='white-space=pre-wrap;'>"
         "<b>The</b> <b>dog</b> likes bones"
         "</p>"
     )
+    assert num_results == 1
     next_result = (
         "<p><b>Showing Result 1 (Document ID 0)</b></p>"
         "<p style='white-space=pre-wrap;'>"
@@ -201,10 +208,11 @@ def test_html_display():
         "</p>"
     )
     # now, return all results
-    all_results = corpus._show_html_occurrences("the dog")
+    all_results, total_count = corpus._show_html_occurrences("the dog")
     assert all_results == html_display + next_result
+    assert total_count == 2
     # if you narrow the window size, return only nearby results.
-    small_window = corpus._show_html_occurrences("the dog", window_size=2)
+    small_window, _ = corpus._show_html_occurrences("the dog", window_size=2)
     assert small_window == (
         "<p><b>Showing Result 0 (Document ID 1)</b></p>"
         "<p style='white-space=pre-wrap;'>"
