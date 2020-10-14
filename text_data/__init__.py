@@ -20,7 +20,7 @@ from typing import (
 from IPython import display
 import numpy as np
 
-from text_data import indexing, tokenize
+from text_data import core, tokenize
 from text_data.query import Query, QueryItem
 
 __author__ = """Max Lee"""
@@ -38,7 +38,7 @@ CorpusClass = TypeVar("CorpusClass", bound="Corpus")
 class WordIndex:
     """This is a class designed to contain quick lookups of words and phrases.
 
-    It mainly provides convenience lookups on top of `indexing.PositionalIndex`
+    It mainly provides convenience lookups on top of `core.PositionalIndex`
     and is designed solely for use inside of `Corpus`.
 
     Args:
@@ -51,7 +51,7 @@ class WordIndex:
         tokenized_documents: List[List[str]],
         indexed_locations: Optional[List[Tuple[int, int]]],
     ):
-        self.index = indexing.PositionalIndex(tokenized_documents, indexed_locations)
+        self.index = core.PositionalIndex(tokenized_documents, indexed_locations)
 
     def __len__(self):
         return len(self.index)
@@ -145,8 +145,12 @@ class Corpus(WordIndex):
     ):
         self.documents = documents
         self.tokenizer = tokenizer
-        # for some reason mypy doesn't get that this converts from a list of tuples to a tuple of lists
-        words, positions = map(list, zip(*[tokenizer(doc) for doc in documents]))  # type: ignore
+        if len(documents) > 0:
+            tokenized_docs = [tokenizer(doc) for doc in documents]
+            # for some reason mypy doesn't get that this converts from a list of tuples to a tuple of lists
+            words, positions = map(list, zip(*tokenized_docs))  # type: ignore
+        else:
+            words, positions = [], []
         self.tokenized_documents = words
         self.ngram_indexes: Dict[int, WordIndex] = {}
         self.ngram_sep = sep
@@ -219,7 +223,7 @@ class Corpus(WordIndex):
             suffix: The suffix after the last word of each n-gram
         """
         if default:
-            ngram_words = indexing.ngrams_from_documents(
+            ngram_words = core.ngrams_from_documents(
                 self.tokenized_documents,
                 n,
                 self.ngram_sep,
@@ -227,7 +231,7 @@ class Corpus(WordIndex):
                 self.ngram_suffix,
             )
         else:
-            ngram_words = indexing.ngrams_from_documents(
+            ngram_words = core.ngrams_from_documents(
                 self.tokenized_documents, n, sep, prefix, suffix
             )
         self.ngram_indexes[n] = WordIndex(ngram_words, None)
@@ -248,7 +252,7 @@ class Corpus(WordIndex):
         self.documents += new_documents
         self.tokenized_documents += words
         for ngram, index in self.ngram_indexes.items():
-            ngram_tok = indexing.ngrams_from_documents(
+            ngram_tok = core.ngrams_from_documents(
                 words,
                 ngram,
                 self.ngram_sep,
@@ -335,8 +339,8 @@ class Corpus(WordIndex):
         Args:
             query: A string boolean query (as defined in `text_data.Query`)
             query_tokenizer: A function to tokenize the words in your query. This
-            allows you to optionally search for words in your index that include
-            spaces (since it defaults to string.split).
+                allows you to optionally search for words in your index that include
+                spaces (since it defaults to string.split).
         """
         return self._search_item(  # type: ignore
             self._yield_subquery_document_results,  # type: ignore
@@ -567,3 +571,150 @@ class Corpus(WordIndex):
                     results += "<b>&hellip;</b>"
                 results += "</p>"
         return results
+
+    def search_document_count(
+        self,
+        query_string: str,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ) -> int:
+        """Finds the total number of documents matching a query.
+
+        By entering a search, you can get the total number of documents
+        that match the query.
+
+        Args:
+            query_string: The query you're searching for
+            query_tokenizer: The tokenizer for the query
+        """
+        return len(self.search_documents(query_string, query_tokenizer))
+
+    def search_document_freq(
+        self,
+        query_string: str,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ) -> float:
+        """Finds the percentage of documents that match a query.
+
+        Args:
+            query_string: The query you're searching for
+            query_tokenizer: The tokenizer for the query
+        """
+        return self.search_document_count(query_string, query_tokenizer) / len(self)
+
+    def search_occurrence_count(
+        self,
+        query_string: str,
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ) -> int:
+        """Finds the total number of matches you have for a query.
+
+        Args:
+            query_string: The query you're searching for
+            query_tokenizer: The tokenizer for the query
+        """
+        return len(self.search_occurrences(query_string, query_tokenizer))
+
+    @core.requires_display_extra
+    def _render_bar_chart(
+        self,
+        metric_func: Callable[[str, Callable[[str], List[str]]], Union[float, int]],
+        metric_name: str,
+        queries: List[str],
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ):
+        """Creates a bar chart given a callable that returns a metric.
+
+        Internal for `display_document_count`, `display_document_freqs`, and `display_occurrence_count`.
+
+        Args:
+            metric_func: A function that takes in a query and returns a metric
+                (e.g. `Corpus.search_document_count`)
+            metric_name: The name for the metric (used as an axis label)
+            queries: A list of queries
+            query_tokenizer: A function for tokenizing the queries
+        """
+        import altair as alt
+
+        json_data = [
+            {"Query": query, metric_name: metric_func(query, query_tokenizer)}
+            for query in queries
+        ]
+        data = alt.Data(values=json_data)
+        return (
+            alt.Chart(data)
+            .mark_bar()
+            .encode(x=f"{metric_name}:Q", y=alt.Y("Query:N", sort="-x"))
+        )
+
+    @core.requires_display_extra
+    def display_document_count(
+        self,
+        queries: List[str],
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ):
+        """Returns a bar chart (in altair) showing the queries with the largest number of documents.
+
+        Args:
+            queries: A list of queries (in the same form you use to search for things)
+            query_tokenizer: The tokenizer for the query
+        """
+        return self._render_bar_chart(
+            self.search_document_count, "Number of documents", queries, query_tokenizer
+        )
+
+    @core.requires_display_extra
+    def display_document_frequency(
+        self,
+        queries: List[str],
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ):
+        """Displays a bar chart showing the percentages of documents with a given query.
+
+        Args:
+            queries: A list of queries
+            query_tokenizer: A tokenizer for each query
+        """
+        return self._render_bar_chart(
+            self.search_document_freq, "Document Frequency", queries, query_tokenizer
+        )
+
+    @core.requires_display_extra
+    def display_occurrence_count(
+        self,
+        queries: List[str],
+        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    ):
+        """Display the number of times a query matches.
+
+        Args:
+            queries: A list of queries
+            query_tokenizer: The tokenizer for the query
+        """
+        return self._render_bar_chart(
+            self.search_occurrence_count, "Number of matches", queries, query_tokenizer
+        )
+
+    def _document_html(self, doc_idx: int) -> str:
+        """Return the HTML to display a document.
+
+        Internal for `display_document` and `display_documents`.
+        """
+        content = self.documents[doc_idx]
+        return f"<p><b>Document at index {doc_idx}</b></p><p>{content}</p>"
+
+    def display_document(self, doc_idx: int) -> display.HTML:
+        """Print an entire document, given its index.
+
+        Args:
+            doc_idx: The index of the document
+        """
+        return display.HTML(self._document_html(doc_idx))
+
+    def display_documents(self, documents: List[int]) -> display.HTML:
+        """Display a number of documents, at the specified indexes.
+
+        Args:
+            documents: A list of document indexes.
+        """
+        html = "".join([self._document_html(idx) for idx in documents])
+        return display.HTML(html)

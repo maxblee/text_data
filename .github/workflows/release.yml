@@ -31,16 +31,14 @@ jobs:
           override: true
 
       - name: Install pipenv
-        uses: dschep/install-pipenv-action@v1
+        uses: Gr1N/setup-poetry@v4
 
       - name: Install dependencies
       # need to install dev dependencies because of maturin
-        run: |
-          pipenv install
-          pipenv install --dev
+        run: poetry install -E display
 
       - name: Build Python package
-        run: pipenv run maturin build --release --no-sdist --strip --interpreter python${{matrix.python_version}}
+        run: poetry run maturin build --release --no-sdist --strip --interpreter python${{matrix.python_version}}
 
       - name: List wheels
         if: matrix.os == 'windows-latest'
@@ -72,4 +70,4 @@ jobs:
         if: github.event_name == 'release' && github.event.action == 'created'
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI }}
-        run: pipenv run maturin publish --username __token__
+        run: poetry run maturin publish --username __token__
