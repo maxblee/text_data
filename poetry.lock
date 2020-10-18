@@ -856,6 +856,14 @@ test = ["pytest (>=3.1.0)", "typing-extensions (>=3.5)", "sphobjinv (>=2.0)", "S
 type_comments = ["typed-ast (>=1.4.0)"]
 
 [[package]]
+name = "sphinx-bootstrap-theme"
+version = "0.7.1"
+description = "Sphinx Bootstrap Theme."
+category = "dev"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "sphinxcontrib-applehelp"
 version = "1.0.2"
 description = "sphinxcontrib-applehelp is a sphinx extension which outputs Apple help books"
@@ -901,6 +909,17 @@ python-versions = ">=3.5"
 
 [package.extras]
 test = ["pytest", "flake8", "mypy"]
+
+[[package]]
+name = "sphinxcontrib-katex"
+version = "0.6.1"
+description = "|tests| |docs| |license|"
+category = "dev"
+optional = false
+python-versions = "*"
+
+[package.dependencies]
+sphinx = ">=1.6"
 
 [[package]]
 name = "sphinxcontrib-qthelp"
@@ -1050,8 +1069,8 @@ display = ["altair"]
 
 [metadata]
 lock-version = "1.1"
-python-versions = "^3.6.1"
-content-hash = "5e7260e23faa83d5003e65092a5c0e7dc3a08c60c57cb7e6f1c32fe3ab16ffd3"
+python-versions = "^3.6"
+content-hash = "bc1fac94b30257757ab94f24292d8503e6c907de0569e45ed248c8eca39c07ba"
 
 [metadata.files]
 alabaster = [
@@ -1547,6 +1566,9 @@ sphinx-autodoc-typehints = [
     {file = "sphinx-autodoc-typehints-1.11.1.tar.gz", hash = "sha256:244ba6d3e2fdb854622f643c7763d6f95b6886eba24bec28e86edf205e4ddb20"},
     {file = "sphinx_autodoc_typehints-1.11.1-py3-none-any.whl", hash = "sha256:da049791d719f4c9813642496ee4764203e317f0697eb75446183fa2a68e3f77"},
 ]
+sphinx-bootstrap-theme = [
+    {file = "sphinx-bootstrap-theme-0.7.1.tar.gz", hash = "sha256:571e43ccb76d4c6c06576aa24a826b6ebc7adac45a5b54985200128806279d08"},
+]
 sphinxcontrib-applehelp = [
     {file = "sphinxcontrib-applehelp-1.0.2.tar.gz", hash = "sha256:a072735ec80e7675e3f432fcae8610ecf509c5f1869d17e2eecff44389cdbc58"},
     {file = "sphinxcontrib_applehelp-1.0.2-py2.py3-none-any.whl", hash = "sha256:806111e5e962be97c29ec4c1e7fe277bfd19e9652fb1a4392105b43e01af885a"},
@@ -1562,6 +1584,10 @@ sphinxcontrib-htmlhelp = [
 sphinxcontrib-jsmath = [
     {file = "sphinxcontrib-jsmath-1.0.1.tar.gz", hash = "sha256:a9925e4a4587247ed2191a22df5f6970656cb8ca2bd6284309578f2153e0c4b8"},
     {file = "sphinxcontrib_jsmath-1.0.1-py2.py3-none-any.whl", hash = "sha256:2ec2eaebfb78f3f2078e73666b1415417a116cc848b72e5172e596c871103178"},
+]
+sphinxcontrib-katex = [
+    {file = "sphinxcontrib-katex-0.6.1.tar.gz", hash = "sha256:88320b2780f350d67f84a5424973ce24aee65701e8e163a7f5856c5df3353188"},
+    {file = "sphinxcontrib_katex-0.6.1-py2.py3-none-any.whl", hash = "sha256:10261ec5bc07a10e9dd9a36ae76c1347f602ce5a2a22610c8998e6c4541a15c0"},
 ]
 sphinxcontrib-qthelp = [
     {file = "sphinxcontrib-qthelp-1.0.3.tar.gz", hash = "sha256:4c33767ee058b70dba89a6fc5c1892c0d57a54be67ddd3e7875a18d14cba5a72"},

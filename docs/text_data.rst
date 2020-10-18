@@ -12,6 +12,22 @@ Subpackages
 Submodules
 ----------
 
+text\_data.index module
+-----------------------
+
+.. automodule:: text_data.index
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+text\_data.multi\_corpus module
+-------------------------------
+
+.. automodule:: text_data.multi_corpus
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 text\_data.query module
 -----------------------
 

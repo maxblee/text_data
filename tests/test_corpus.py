@@ -8,7 +8,8 @@ adding n-gram indexes, and displaying results.
 """
 import pytest
 
-from text_data import Corpus, PositionResult
+from text_data import Corpus
+from text_data.index import PositionResult
 
 
 def test_empty_corpus():

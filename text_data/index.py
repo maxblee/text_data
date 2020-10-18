@@ -1,4 +1,23 @@
-"""Holds functionality for indexing."""
+"""This module handles the indexing of `text_data`.
+
+Its two classes — :code:`WordIndex` and :code:`Corpus` — form the central part
+of this library.
+
+:class:`text_data.index.WordIndex` indexes lists of documents — which themselves form
+lists of words or phrases — and offers utilities for performing
+statistical calculations on your data.
+
+Using the index, you can find out how many times a given word appeared in a
+document or do more complicated things, like finding the TF-IDF values
+for every single word across all of the documents in a corpus. In addition
+to offering a bunch of different ways to compute statistics, :code:`WordIndex`
+also offers capabilities for creating new :code:`WordIndex` objects — something
+that can be very helpful if you're trying to figure out what
+makes a set of documents different from some other documents.
+
+The :class:`text_data.index.Corpus`, meanwhile, is a wrapper over :code:`WordIndex` that offers tools for searching
+through sets of documents. In addition, it offers tools for visually seeing the results of search queries.
+"""
 import collections
 import functools
 import itertools
@@ -32,14 +51,118 @@ CorpusClass = TypeVar("CorpusClass", bound="Corpus")
 
 
 class WordIndex:
-    """This is a class designed to contain quick lookups of words and phrases.
+    r"""An inverted, positional index containing the words in a corpus.
 
-    It mainly provides convenience lookups on top of `core.PositionalIndex`
-    and is designed solely for use inside of `Corpus`.
+    This is designed to allow people to be able to quickly compute statistics
+    about the language used across a corpus. The class offers a couple of broad
+    strategies for understanding the ways in which words are used across documents.
+
+    **Corpus Information**
+
+    A number of functions are designed to allow you to look up information
+    about the corpus. For instance, you can collect a sorted list
+    or a set of all the unique words in the corpus. Or you can get a list
+    of the most commonly appearing elements:
+
+    * :attr:`~text_data.index.WordIndex.vocab` and :attr:`~text_data.index.WordIndex.vocab_list`
+      both return the unique words or phrases appearing in the index.
+    * :attr:`~text_data.index.WordIndex.vocab_size` gets the number of unique words in the index.
+    * :attr:`~text_data.index.WordIndex.num_words` gets the total number of words in the index.
+
+
+    **Point Estimates**
+
+    These allow you to gather statistics about single words
+    or about word, document pairs. For instance, you can see
+    how many words there are in the corpus, how many unique words there are,
+    or how often a particular word appears in a document:
+
+    * :meth:`~text_data.index.WordIndex.document_count` and
+      :meth:`~text_data.index.WordIndex.document_frequency`
+      provide the number of documents or the proportion of documents in which
+      a word appeared. :meth:`~text_data.index.WordIndex.idf` produces
+      the inverse (:math:`\frac{1}{df}`) of the document frequency.
+    * :meth:`~text_data.index.WordIndex.docs_with_word`
+      returns a list of documents where the word occurred.
+    * In a similar vein, :meth:`~text_data.index.WordIndex.word_counter`
+      returns a dictionary mapping the document index in which a word appeared
+      to the number of times it appeared in that document.
+    * :meth:`~text_data.index.WordIndex.most_common`
+      and :meth:`~text_data.index.WordIndex.max_word_count`
+      return information about the words appearing most frequently in the corpus.
+    * :meth:`~text_data.index.WordIndex.word_count`,
+      :meth:`~text_data.index.WordIndex.word_frequency`, and
+      :meth:`~text_data.index.WordIndex.odds_word`
+      return information about how often a word appeared in the corpus as
+      a whole.
+    * :meth:`~text_data.index.WordIndex.term_count`
+      and :meth:`~text_data.index.WordIndex.term_frequency`
+      return information about how often a word appeared *in a particular document*.
+
+    **Matrix and Vector Calculation**
+
+    These methods enable you to make efficient and parallelized calculations over the entire corpus.
+    The individual calculations are typically similar to the point estimates,
+    but instead of returning a single value, they return 1-dimensional
+    or 2-dimensional numpy arrays.
+
+    In every case, the rows of these arrays represent the unique words of the vocabulary,
+    presented in sorted order. As a result, you can safely run
+    element-wise calculations over the matrices.
+
+    There are currently two different shapes for these arrays.
+    The first is a 1-dimensional array where each result represents
+    a statistic about that individual word over the entire corpus.
+    These functions all end with the suffix :code:`_vector`.
+    The second is a 2-dimensional array where each cell represents
+    a statistic about that word in that particular document. These
+    functions all end in the suffix :code:`_matrix`.
+
+    As you can see, most of these functions map easily to the point estimates
+    mentioned above:
+
+    .. csv-table:: Vector Methods
+        :header: "Point Estimate", "Vector Function", "Matrix Function"
+        :widths: 50, 50, 50
+
+        ":meth:`~text_data.index.WordIndex.document_count`", ":meth:`~text_data.index.WordIndex.doc_count_vector`", ""
+        ":meth:`~text_data.index.WordIndex.document_frequency`", ":meth:`~text_data.index.WordIndex.doc_freq_vector`", ""
+        ":meth:`~text_data.index.WordIndex.idf`", ":meth:`~text_data.index.WordIndex.idf_vector`", ""
+        ":meth:`~text_data.index.WordIndex.word_count`", ":meth:`~text_data.index.WordIndex.word_count_vector`", ""
+        ":meth:`~text_data.index.WordIndex.word_frequency`", ":meth:`~text_data.index.WordIndex.word_freq_vector`", ""
+        ":meth:`~text_data.index.WordIndex.odds_word`", ":meth:`~text_data.index.WordIndex.odds_vector`", ""
+        ":meth:`~text_data.index.WordIndex.term_count`", "", ":meth:`~text_data.index.WordIndex.count_matrix`"
+        ":meth:`~text_data.index.WordIndex.term_frequency`", "", ":meth:`~text_data.index.WordIndex.frequency_matrix`"
+        ":code:`__contains__`", "", ":meth:`~text_data.index.WordIndex.one_hot_matrix`"
+
+    The one exception to this rule is :meth:`~text_data.index.WordIndex.tfidf_matrix`,
+    which computes term-document matrices of TF-IDF scores.
+
+    In addition to the term vector and term-document matrix functions, there is
+    :meth:`~text_data.index.WordIndex.get_top_words`, which is designed
+    to allow you to find the highest or lowest scores and their associated words along any
+    term vector or term-document matrix you please.
+
+    Note:
+        For the most part, you will not want to instantiate :code:`WordIndex` directly.
+        Instead, you will likely use :class:`~text_data.index.Corpus`, which subclasses
+        :code:`WordIndex`.
+
+        That's because :class:`~text_data.index.Corpus` offers utilities for searching through
+        documents. In addition, with the help of tools from :py:mod:`text_data.tokenize`,
+        instantiating :class:`~text_data.index.Corpus` objects is a bit simpler than
+        instantiating :code:`WordIndex` objects directly.
+
+        I particularly recommend that you **do not** instantiate the
+        :code:`indexed_locations` directly (i.e. outside of :class:`~text_data.index.Corpus`).
+        The only way you can do anything with :code:`indexed_locations` from outside of
+        :class:`~text_data.index.Corpus` is by using an internal attribute
+        and hacking through poorly documented Rust code.
 
     Args:
-        tokenized_documents: A list of documents, where each document is a list of words.
-        indexed_locations: The actual positions
+        tokenized_documents: A list of documents where each document is a list of words.
+        indexed_locations: A list of documents where each documents contains a list
+            of the start end positions of the words in :code:`tokenized_documents`.
     """
 
     def __init__(
@@ -54,39 +177,199 @@ class WordIndex:
 
     def __contains__(self, item: str) -> bool:
         """Determines whether the index has a given word."""
-        return self.index.has_word(item)
+        return item in self.index
+
+    # Corpus Information
+    # This section returns simple information about a corpus — how many
+    # words are there, what the vocabulary is, etc.
 
     @property
     def vocab(self) -> Set[str]:
-        """Returns all of the unique words in the index."""
+        """Returns all of the unique words in the index.
+
+        Example:
+            >>> corpus = Corpus(["a cat and a dog"])
+            >>> corpus.vocab == {"a", "cat", "and", "dog"}
+            True
+        """
         return self.index.vocabulary()
 
     @property
+    def vocab_list(self) -> List[str]:
+        """Returns a sorted list of the words appearing in the index.
+
+        This is primarily intended for use in matrix or vector functions,
+        where the order of the words matters.
+
+        Example:
+            >>> corpus = Corpus(["a cat and a dog"])
+            >>> corpus.vocab_list
+            ['a', 'and', 'cat', 'dog']
+        """
+        return self.index.vocabulary_list()
+
+    @property
     def vocab_size(self) -> int:
-        """Returns the total number of unique words in the dictionary."""
+        """Returns the total number of unique words in the corpus.
+
+        Example:
+            >>> corpus = Corpus(["a cat and a dog"])
+            >>> corpus.vocab_size
+            4
+        """
         return self.index.vocab_size
 
     @property
     def num_words(self) -> int:
-        """Returns the total number of words in the dictionary (not just unique)."""
+        """Returns the total number of words in the corpus (not just unique).
+
+        Example:
+            >>> corpus = Corpus(["a cat and a dog"])
+            >>> corpus.num_words
+            5
+        """
         return self.index.num_words
+
+    # Point Estimates
+    # This section contains point estimates for the index. This includes
+    # statistics related to how often words appear in a particular document,
+    # how often words appear across the corpus, etc.
+    #
+    # Word Statistics
+    # These provide statistics about specific words, without
+    # requiring any information about the documents.
+
+    def document_count(self, word: str) -> int:
+        """Returns the total number of documents a word appears in.
+
+        Example:
+            >>> corpus = Corpus(["example document", "another example"])
+            >>> corpus.document_count("example")
+            2
+            >>> corpus.document_count("another")
+            1
+
+        Args:
+            word: The word you're looking up.
+        """
+        return self.index.document_count(word)
+
+    def document_frequency(self, word: str) -> float:
+        """Returns the percentage of documents that contain a word.
+
+        Example:
+            >>> corpus = Corpus(["example document", "another example"])
+            >>> corpus.document_frequency("example")
+            1.0
+            >>> corpus.document_frequency("another")
+            0.5
+
+        Args:
+            word: The word you're looking up.
+        """
+        return self.index.document_frequency(word)
+
+    def idf(self, word: str) -> float:
+        r"""Returns the inverse document frequency.
+
+        If the number of documents in your :code:`WordIndex`
+        :code:`index` is :math:`N` and the document frequency from
+        :meth:`~text_data.index.WordIndex.document_frequency` is
+        :math:`df`, the inverse document frequency is :math:`\frac{N}{df}`.
+
+        Example:
+            >>> corpus = Corpus(["example document", "another example"])
+            >>> corpus.idf("example")
+            1.0
+            >>> corpus.idf("another")
+            2.0
+
+        Args:
+            word: The word you're looking for.
+        """
+        return self.index.idf(word)
+
+    def docs_with_word(self, word: str) -> List[int]:
+        """Returns a list of all the documents containing a word.
+
+        Example:
+            >>> corpus = Corpus(["example document", "another document"])
+            >>> corpus.docs_with_word("document")
+            [0, 1]
+            >>> corpus.docs_with_word("another")
+            [1]
+
+        Args:
+            word: The word you're looking up.
+        """
+        return self.index.docs_with_word(word)
+
+    def word_counter(self, word: str) -> Dict[int, int]:
+        """Maps the documents containing a word to the number of times the word appeared.
+
+        Examples:
+            >>> corpus = Corpus(["a bird", "a bird and a plane", "two birds"])
+            >>> corpus.word_counter("a") == {0: 1, 1: 2}
+            True
+
+        Args:
+            word: The word you're looking up
+
+        Returns:
+            A dictionary mapping the document index of the word to the number of times
+                it appeared in that document.
+        """
+        return self.index.word_counter(word)
 
     def most_common(self, num_words: Optional[int] = None) -> List[Tuple[str, int]]:
         """Returns the most common items.
 
-        This is essentially `collections.Counter.most_common`.
+        This is nearly identical to :code:`collections.Counter.most_common`.
+        However, unlike `collections.Counter.most_common`, the values that
+        are returned appear in alphabetical order.
+
+        Example:
+            >>> corpus = Corpus(["i walked to the zoo", "i bought a zoo"])
+            >>> corpus.most_common()
+            [('i', 2), ('zoo', 2), ('a', 1), ('bought', 1), ('the', 1), ('to', 1), ('walked', 1)]
+            >>> corpus.most_common(2)
+            [('i', 2), ('zoo', 2)]
 
         Args:
             num_words: The number of words you return. If you enter None
-            or you enter a number larger than the total number of words,
-            returns all of the words, in sorted order from most common to least common.
+                or you enter a number larger than the total number of words,
+                it returns all of the words, in sorted order from most common to least common.
         """
         return self.index.most_common(num_words)
+
+    def max_word_count(self) -> Optional[Tuple[str, int]]:
+        """Returns the most common word and the number of times it appeared in the corpus.
+
+        Returns :code:`None` if there are no words in the corpus.
+
+        Example:
+            >>> corpus = Corpus([])
+            >>> corpus.max_word_count() is None
+            True
+            >>> corpus.update(["a bird a plane superman"])
+            >>> corpus.max_word_count()
+            ('a', 2)
+        """
+        return self.index.max_word_count()
 
     def word_count(self, word: str) -> int:
         """Returns the total number of times the word appeared.
 
         Defaults to 0 if the word never appeared.
+
+        Example:
+            >>> corpus = Corpus(["this is a document", "a bird and a plane"])
+            >>> corpus.word_count("document")
+            1
+            >>> corpus.word_count("a")
+            3
+            >>> corpus.word_count("malarkey")
+            0
 
         Args:
             word: The string word (or phrase).
@@ -94,24 +377,423 @@ class WordIndex:
         return self.index.word_count(word)
 
     def word_frequency(self, word: str) -> float:
-        """Returns the frequency in which the word appeared.
+        """Returns the frequency in which the word appeared in the corpus.
+
+        Example:
+            >>> corpus = Corpus(["this is fun", "or is it"])
+            >>> np.isclose(corpus.word_frequency("fun"), 1. / 6.)
+            True
+            >>> np.isclose(corpus.word_frequency("is"), 2. / 6.)
+            True
 
         Args:
             word: The string word or phrase.
         """
         return self.index.word_frequency(word)
 
-    def document_count(self, word: str) -> int:
-        """Returns the total number of documents a word appears in."""
-        return self.index.document_count(word)
+    def odds_word(self, word: str, sublinear: bool = False) -> float:
+        r"""Returns the odds of seeing a word at random.
 
-    def document_frequency(self, word: str) -> float:
-        """Returns the frequency in which a word appears in a document."""
-        return self.index.document_frequency(word)
+        In statistics, the *odds* of something happening are the probability
+        of it happening, versus the probability of it not happening,
+        that is :math:`\frac{p}{1 - p}`. The "log odds" of
+        something happening — the result of using :code:`self.log_odds_word` —
+        is similarly equivalent to :math:`log_{2}{\frac{p}{1 - p}}`.
 
+        (The probability in this case is simply the word frequency.)
+
+        Example:
+            >>> corpus = Corpus(["i like odds ratios"])
+            >>> np.isclose(corpus.odds_word("odds"), 1. / 3.)
+            True
+            >>> np.isclose(corpus.odds_word("odds", sublinear=True), np.log2(1./3.))
+            True
+
+        Args:
+            word: The word you're looking up.
+            sublinear: If true, returns the
+        """
+        return self.index.odds_word(word, sublinear)
+
+    # Word-Document Statistics
+    #
+    #   These provide statistics about words within a particular document.
     def term_count(self, word: str, document: int) -> int:
-        """Returns the total number of times a word appeared in a document."""
+        """Returns the total number of times a word appeared in a document.
+
+        Assuming the document exists, returns 0 if the word does not
+        appear in the document.
+
+        Example:
+            >>> corpus = Corpus(["i am just thinking random thoughts", "am i"])
+            >>> corpus.term_count("random", 0)
+            1
+            >>> corpus.term_count("random", 1)
+            0
+
+        Args:
+            word: The word you're looking up.
+            document: The index of the document.
+
+        Raises:
+            ValueError: If you selected a document
+        """
         return self.index.term_count(word, document)
+
+    def term_frequency(self, word: str, document: int) -> float:
+        """Returns the proportion of words in document :code:`document` that are :code:`word`.
+
+        Example:
+            >>> corpus = Corpus(["just coming up with words", "more words"])
+            >>> np.isclose(corpus.term_frequency("words", 1), 0.5)
+            True
+            >>> np.isclose(corpus.term_frequency("words", 0), 0.2)
+            True
+        """
+        return self.index.term_frequency(word, document)
+
+    # Vector computations
+    #
+    # All of the functions in this grouping return term-vectors where each
+    # item in the vector refers to a word in the vocabulary (returned by
+    # `self.vocab_list`. Because this is internally stored
+    # as a BTreeMap, these words appear in sorted order.)
+
+    def doc_count_vector(self) -> np.array:
+        """Returns the total number of documents each word appears in.
+
+        Example:
+            >>> corpus = Corpus(["example", "another example"])
+            >>> corpus.doc_count_vector()
+            array([1., 2.])
+        """
+        return self.index.doc_count_vector()
+
+    def doc_freq_vector(self) -> np.array:
+        """Returns the proportion of documents each word appears in.
+
+        Example:
+            >>> corpus = Corpus(["example", "another example"])
+            >>> corpus.doc_freq_vector()
+            array([0.5, 1. ])
+        """
+        return self.index.doc_freq_vector()
+
+    def idf_vector(self) -> np.array:
+        """Returns the inverse document frequency vector.
+
+        Example:
+            >>> corpus = Corpus(["example", "another example"])
+            >>> corpus.idf_vector()
+            array([2., 1.])
+        """
+        return self.index.idf_vector()
+
+    def word_count_vector(self) -> np.array:
+        """Returns the total number of times each word appeared in the corpus.
+
+        Example:
+            >>> corpus = Corpus(["example", "this example is another example"])
+            >>> corpus.word_count_vector()
+            array([1., 3., 1., 1.])
+        """
+        return self.index.word_count_vector()
+
+    def word_freq_vector(self) -> np.array:
+        """Returns the frequency in which each word appears over the corpus.
+
+        Example:
+            >>> corpus = Corpus(["example", "this example is another example"])
+            >>> corpus.word_freq_vector()
+            array([0.16666667, 0.5       , 0.16666667, 0.16666667])
+        """
+        return self.index.word_freq_vector()
+
+    def odds_vector(self, sublinear: bool = False) -> np.array:
+        """Returns a vector of the odds of each word appearing at random.
+
+        Example:
+            >>> corpus = Corpus(["example", "this example is another example"])
+            >>> corpus.odds_vector()
+            array([0.2, 1. , 0.2, 0.2])
+            >>> corpus.odds_vector(sublinear=True)
+            array([-2.32192809,  0.        , -2.32192809, -2.32192809])
+
+        Args:
+            sublinear: If true, returns the log odds.
+        """
+        return self.index.odds_vector(sublinear)
+
+    def count_matrix(self) -> np.array:
+        """Returns a matrix showing the number of times each word appeared in each document.
+
+        Example:
+            >>> corpus = Corpus(["example", "this example is another example"])
+            >>> corpus.count_matrix().tolist() == [[0., 1.], [1., 2.], [0., 1.], [0., 1.]]
+            True
+        """
+        return self.index.count_matrix()
+
+    def frequency_matrix(self) -> np.array:
+        """Returns a matrix showing the frequency of each word appearing in each document.
+
+        Example:
+            >>> corpus = Corpus(["example", "this example is another example"])
+            >>> corpus.frequency_matrix().tolist() == [[0.0, 0.2], [1.0, 0.4], [0.0, 0.2], [0.0, 0.2]]
+            True
+        """
+        # tf_matrix defaults to sublinear=True, normalize=False which are good settings
+        # for computing TF-IDF. But with the opposite of those, we get the raw counts / the doc lengths
+        return self.index.tf_matrix(sublinear=False, normalize=True)
+
+    def one_hot_matrix(self) -> np.array:
+        """Returns a matrix showing whether each given word appeared in each document.
+
+        For these matrices, all cells contain a floating point value of either a
+        1., if the word is in that document, or a 0. if the word is not in the document.
+
+        These are sometimes referred to as 'one-hot encoding matrices' in machine learning.
+
+        Example:
+            >>> corpus = Corpus(["example", "this example is another example"])
+            >>> np.array_equal(
+            ...     corpus.one_hot_matrix(),
+            ...     np.array([[0., 1.], [1., 1.], [0., 1.], [0., 1.]])
+            ... )
+            True
+        """
+        return self.index.one_hot_matrix()
+
+    def tfidf_matrix(
+        self,
+        norm: Optional[str] = "l2",
+        use_idf: bool = True,
+        smooth_idf: bool = False,
+        sublinear_tf: bool = True,
+        add_k: int = 1,
+    ) -> np.array:
+        r"""This creates a term-document TF-IDF matrix from the index.
+
+        In natural language processing, TF-IDF is a mechanism for finding
+        out which words are distinct across documents. It's used particularly
+        widely in information retrieval, where your goal is to rank documents
+        that you know match a query by how relevant you think they'll be.
+
+        The basic intuition goes like this: If a word appears particularly
+        frequently in a document, it's probably more relevant to that document
+        than if the word occurred more rarely. But, some words are simply
+        common: If document X uses the word 'the' more often than the word
+        'idiomatic,' that really tells you more about the words 'the' and
+        'idiomatic' than it does about the document.
+
+        TF-IDF tries to balance these two competing interests by taking the
+        'term frequency,' or how often a word appears in the document,
+        and normalizing it by the 'document frequency,' or the proportion
+        of documents that contain the word. This has the effect of reducing
+        the weights of common words (and even setting the weights of some
+        very common words to 0 in some implementations).
+
+        It should be noted that there are a number of different implementations
+        of TF-IDF. Within information retrieval, TF-IDF is part of the `'SMART
+        Information Retrieval System' <https://en.wikipedia.org/wiki/SMART_Information_Retrieval_System>`_.
+        Although the exact equations can vary considerably, they typically follow the same approach:
+        First, they find some value to represent the frequency of each word in the
+        document. Often (but not always), this is just the raw number of times
+        in which a word appeared in the document. Then, they normalize that
+        based on the document frequency. And finally, they normalize
+        those values based on the length of the document, so that long documents
+        are not weighted more favorably (or less favorably) than shorter documents.
+
+        The approach that I have taken to this is shamelessly cribbed from
+        `scikit's TfidfTransformer <https://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.TfidfTransformer.html>`_.
+        Specifically, I've allowed for some customization of the specific formula
+        for TF-IDF while not including methods that require access to the raw
+        documents, which would be computationally expensive to perform. This allows
+        for the following options:
+
+        * You can set the term frequency to either take the raw count of the word
+          in the document (:math:`c_{t,d}`) or by using :code:`sublinear_tf=True`
+          and taking :math:`1 + \log_{2}{c_{t,d}}`
+        * You can skip taking the inverse document frequency :math:`df^{-1}`
+          altogether by setting :code:`use_idf=False` or you can smooth the inverse
+          document frequency by setting :code:`smooth_idf=True`.
+          This adds one to the numerator and the denominator. (**Note:** Because
+          this method is only run on a vocabulary of words that are in the corpus,
+          there can't be any divide by zero errors, but this allows you to
+          replicate scikit's :code:`TfidfTransformer`.)
+        * You can add some number to the logged inverse document frequency
+          by setting :code:`add_k` to something other than 1. This is the only
+          difference between this implementation and scikits, as scikit automatically
+          setts :code:`k` at 1.
+        * Finally, you can choose how to normalize the document lengths. By default,
+          this takes the L-2 norm, or :math:`\sqrt{\sum{w_{i,k}^{2}}}`, where :math:`w_{i,k}`
+          is the weight you get from multiplying the term frequency by the inverse document
+          frequency. But you can also set the norm to :code:`'l1'` to get the L1-norm,
+          or :math:`\sum{\vert w_{i,k} \vert}`. Or you can set it to :code:`None` to avoid
+          doing any document-length normalization at all.
+
+        Examples:
+            To get a sense of the different options, let's start by creating
+            a pure count matrix with this method. To do that, we'll set
+            :code:`norm=None` so we're not normalizing by the length of the document,
+            :code:`use_idf=False` so we're not doing anything with the document
+            frequency, and :code:`sublinear_tf=False` so we're not taking the
+            logged counts:
+
+            >>> corpus = Corpus(["a cat", "a"])
+            >>> tfidf_count_matrix = corpus.tfidf_matrix(norm=None, use_idf=False, sublinear_tf=False)
+            >>> assert np.array_equal(tfidf_count_matrix, corpus.count_matrix())
+
+            In this particular case, setting :code:`sublinear_tf` to :code:`True`
+            will produce the same result since all of the counts are 1 or 0
+            and :math:`\log{1} + 1 = 1`:
+
+            >>> assert np.array_equal(corpus.tfidf_matrix(norm=None, use_idf=False), tfidf_count_matrix)
+
+            Now, we can incorporate the inverse document frequency. Because the word
+            'a' appears in both documents, its inverse document frequency in is 1;
+            the inverse document frequency of 'cat' is 2, since 'cat' appears in half
+            of the documents. We're additionally taking the base-2 log of the inverse document
+            frequency and adding 1 to the final result. So we get:
+
+            >>> idf_add_1 = corpus.tfidf_matrix(norm=None, sublinear_tf=False, smooth_idf=False)
+            >>> assert idf_add_1.tolist() == [[1., 1.], [2.,0.]]
+
+            Or we can add nothing to the logged values:
+
+            >>> idf = corpus.tfidf_matrix(norm=None, sublinear_tf=False, smooth_idf=False, add_k=0)
+            >>> assert idf.tolist() == [[0.0, 0.0], [1.0, 0.0]]
+
+            The L-1 norm normalizes the results by the sum of the absolute values of their
+            weights. In the case of the count matrix, this is equivalent to creating
+            the frequency matrix:
+
+            >>> tfidf_freq_mat = corpus.tfidf_matrix(norm="l1", use_idf=False, sublinear_tf=False)
+            >>> assert np.array_equal(tfidf_freq_mat, corpus.frequency_matrix())
+
+        Args:
+            norm: Set to 'l2' for the L2 norm (square root of the sums of the square weights),
+                'l1' for the l1 norm (the summed absolute value, or None for no normalization).
+            use_idf: If you set this to False, the weights will only include the term frequency
+                (adjusted however you like)
+            smooth_idf: Adds a constant to the numerator and the denominator.
+            sublinear_tf: Computes the term frequency in log space.
+            add_k: This adds k to every value in the IDF. scikit adds 1
+                to all documents, but this allows for more variable computing
+                (e.g. adding 0 if you want to remove words appearing in every document)
+        """
+        if norm not in {"l2", "l1", None}:
+            raise ValueError("The norm you select must be an L1 norm, L2 norm, or None")
+        # first compute the term frequency. Don't do any normalization yet.
+        tf = self.index.tf_matrix(sublinear=sublinear_tf)
+        # there are more elegant ways to do this, but this just ensures that
+        # we don't compute the IDF if we don't need it
+        if not use_idf:
+            raw_idf = None
+        elif smooth_idf:
+            # number of docs + 1 over document counts + 1
+            raw_idf = (len(self) + 1) / (self.index.doc_count_vector() + 1)
+        else:
+            raw_idf = self.index.idf_vector()
+        if raw_idf is not None:
+            # convert idf to log space and add k to all
+            idf = np.log2(raw_idf) + add_k
+            raw_tfidf = np.apply_along_axis(lambda x: x * idf, 0, tf)
+        else:
+            raw_tfidf = tf
+        if norm is None:
+            return raw_tfidf
+        int_norm = 1 if norm == "l1" else 2
+        return raw_tfidf / np.linalg.norm(raw_tfidf, ord=int_norm, axis=0)
+
+    def get_top_words(
+        self, term_matrix: np.array, top_n: Optional[int] = None, reverse: bool = True
+    ) -> Tuple[np.array, np.array]:
+        """Get the top values along a term matrix.
+
+        Given a matrix where each row represents a word in your vocabulary,
+        this returns a numpy matrix of those top values, along with an array
+        of their respective words.
+
+        You can choose the number of results you want to get by setting
+        :code:`top_n` to some positive value, or you can leave it be and return
+        all of the results in sorted order. Additionally, by setting
+        :code:`reverse` to False (instead of its default of :code:`True`), you can
+        return the scores from smallest to largest.
+
+        Args:
+            term_matrix: a matrix of floats where each row represents a word
+            top_n: The number of values you want to return. If None, returns
+                all values.
+            reverse: If true (the default), returns the N values with the highest scores.
+                If false, returns the N values with the lowest scores.
+
+        Returns:
+            A tuple of 2-dimensional numpy arrays, where the first item
+            is an array of the top-scoring words and the second item
+            is an array of the top scores themselves. Both arrays
+            are of the same size, that is :code:`min(self.vocab_size, top_n)`
+            by the number of columns in the term matrix.
+
+        Raises:
+            ValueError: If :code:`top_n` is less than 1, if there are
+                not the same number of rows in the matrix as there are unique
+                words in the index, or if the numpy array doesn't have 1 or 2 dimensions.
+
+        Example:
+            The first thing you need to do in order to use this function is create
+            a 1- or 2-dimensional term matrix, where the number of rows
+            corresponds to the number of unique words in the corpus. Any of the
+            functions within :code:`WordIndex` that ends in :code:`_matrix(**kwargs)`
+            (for 2-dimensional arrays) or :code:`_vector(**kwargs)` (for 1-dimensional
+            arrays) will do the trick here. I'll show an example with both a
+            word count vector and a word count matrix:
+
+            >>> corpus = Corpus(["The cat is near the birds", "The birds are distressed"])
+            >>> corpus.get_top_words(corpus.word_count_vector(), top_n=2)
+            (array(['the', 'birds'], dtype='<U10'), array([3., 2.]))
+            >>> corpus.get_top_words(corpus.count_matrix(), top_n=1)
+            (array([['the', 'the']], dtype='<U10'), array([[2., 1.]]))
+
+            Similarly, you can return the scores from lowest to highest by setting :code:`reverse=False`.
+            (This is not the default.):
+
+            >>> corpus.get_top_words(-1. * corpus.word_count_vector(), top_n=2, reverse=False)
+            (array(['the', 'birds'], dtype='<U10'), array([-3., -2.]))
+        """
+        # https://github.com/numpy/numpy/issues/15128
+        # this works independently of whether the array is 1-d or 2-d
+        num_rows = np.shape(term_matrix)[0]
+        if top_n is not None and top_n < 0:
+            raise ValueError(
+                "You must enter a positive number of results you wish to return"
+            )
+        if num_rows != self.vocab_size:
+            raise ValueError(
+                (
+                    "You must pass a term matrix (a 1- or 2-dimensional array "
+                    "where every unique word is a row) to this function"
+                )
+            )
+        if term_matrix.ndim != 1 and term_matrix.ndim != 2:
+            raise ValueError("You must enter a 1- or 2-dimensional array")
+        # get the sorting order of the top
+        sorted_vals = term_matrix.argsort(axis=0)
+        k = top_n if top_n is not None else num_rows
+        if reverse:
+            row_slice, ordering = (slice(-k, None), slice(None, None, -1))
+        else:
+            row_slice, ordering = (slice(None, k), slice(None))
+        # reshaping enables vectorized vocab searches; but can only do with 2-dimensional arrays
+        vocab = np.array(self.vocab_list)
+        if term_matrix.ndim == 2:
+            vocab.resize((num_rows, 1))
+        # for every row, column, gets the highest ranked matches
+        top_scores = np.take_along_axis(term_matrix, sorted_vals, axis=0)[row_slice][
+            ordering
+        ]
+        top_vocab = np.take_along_axis(vocab, sorted_vals, axis=0)[row_slice][ordering]
+        return top_vocab, top_scores
 
 
 class Corpus(WordIndex):
@@ -147,7 +829,7 @@ class Corpus(WordIndex):
         self.tokenizer = tokenizer
         if len(documents) > 0:
             tokenized_docs = [tokenizer(doc) for doc in documents]
-            # for some reason mypy doesn't get that this converts from a list of tuples to a tuple of lists
+            # mypy doesn't get that this converts from a list of tuples to a tuple of lists
             words, positions = map(list, zip(*tokenized_docs))  # type: ignore
         else:
             words, positions = [], []

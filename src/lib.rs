@@ -9,13 +9,15 @@
 //! they are sparse but allow for quick access to the positions of
 //! matching text.)
 use ngrams::Ngrams;
-use pyo3::class::mapping::PyMappingProtocol;
+use numpy::{PyArray1, PyArray2};
+use pyo3::class::sequence::PySequenceProtocol;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
+use rayon::prelude::*;
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter::FromIterator;
 use std::ops::Not;
 
@@ -39,6 +41,9 @@ struct PositionalIndex {
     /// The total number of documents
     #[pyo3(get)]
     num_documents: usize,
+    /// A vector marking the length of documents
+    doc_lengths: Vec<usize>,
+    max_idx: usize,
 }
 
 impl Default for PositionalIndex {
@@ -48,6 +53,8 @@ impl Default for PositionalIndex {
             vocab_size: 0,
             num_words: 0,
             num_documents: 0,
+            doc_lengths: Vec::new(),
+            max_idx: 0,
         }
     }
 }
@@ -103,7 +110,9 @@ impl PositionalIndex {
             }
         }
         // need starting length so updates add documents with new ids
-        let starting_id = self.num_documents;
+        let starting_id = self.max_idx;
+        let mut doc_lengths = Vec::new();
+
         for (doc_index, words) in documents.iter().enumerate() {
             let document_id = doc_index + starting_id;
             if let Some(index_locations) = &indexes {
@@ -151,9 +160,12 @@ impl PositionalIndex {
                     .update(document_id, word_position);
                 self.num_words += 1;
             }
+            doc_lengths.push(words.len());
         }
         self.vocab_size = self.index.len();
         self.num_documents += documents.len();
+        self.max_idx += documents.len();
+        self.doc_lengths.append(&mut doc_lengths);
         Ok(())
     }
 
@@ -162,20 +174,31 @@ impl PositionalIndex {
         HashSet::from_iter(self.index.keys().cloned())
     }
 
+    /// Gets all of the words in the corpus and returns them in sorted (list) order
+    fn vocabulary_list(&self) -> Vec<String> {
+        self.index.keys().cloned().collect()
+    }
+
     /// Show the most commonly appearing words
     ///
     /// If num_words is left unspecified, returns all words.
     fn most_common(&self, num_words: Option<usize>) -> Vec<(String, usize)> {
-        let mut word_counts = Vec::new();
-        for (word, term_info) in self.index.iter() {
-            word_counts.push((word.clone(), term_info.term_count));
-        }
+        let mut word_counts: Vec<(String, usize)> = self
+            .index
+            .par_iter()
+            .map(|(word, term_info)| (word.clone(), term_info.term_count))
+            .collect();
         word_counts.sort_unstable_by(|a, b| b.1.cmp(&a.1));
         word_counts
             .into_iter()
             // return the first n | vocab results
             .take(num_words.unwrap_or(self.vocab_size))
             .collect()
+    }
+
+    /// Show the item that appears most often and its count
+    fn max_word_count(&self) -> Option<(String, usize)> {
+        self.most_common(Some(1)).first().map(|v| v.to_owned())
     }
 
     /// Count the total number of times a word has appeared
@@ -192,6 +215,19 @@ impl PositionalIndex {
         self.word_count(word) as f64 / self.num_words as f64
     }
 
+    /// Returns the odds of seeing a word at random.
+    ///
+    /// In other words, the frequency / (1 - frequency)
+    fn odds_word(&self, word: &str, sublinear: bool) -> f64 {
+        let word_freq = self.word_frequency(word);
+        let odds = word_freq / (1. - word_freq);
+        if sublinear.not() {
+            odds
+        } else {
+            odds.log2()
+        }
+    }
+
     /// Count the number of documents a word has appeared in
     fn document_count(&self, word: &str) -> usize {
         self.index.get(word).map(|v| v.postings.len()).unwrap_or(0)
@@ -200,6 +236,32 @@ impl PositionalIndex {
     /// Report the document frequency (the percentage of documents that has the word)
     fn document_frequency(&self, word: &str) -> f64 {
         self.document_count(word) as f64 / self.num_documents as f64
+    }
+
+    /// Get the inverse document frequency (the number of documents / the document count) for a word in a document
+    fn idf(&self, word: &str) -> f64 {
+        self.__len__() as f64 / self.document_count(word) as f64
+    }
+
+    /// Get a list of the documents that contain a word
+    fn docs_with_word(&self, word: &str) -> Vec<usize> {
+        self.index
+            .get(word)
+            .map(|v| v.postings.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Get a mapping of the documents containing a word and its counts
+    ///
+    /// For a given word returns {doc_id: number of counts}
+    fn word_counter(&self, word: &str) -> HashMap<usize, usize> {
+        self.index
+            .get(word)
+            .unwrap_or(&TermIndex::default())
+            .postings
+            .par_iter()
+            .map(|(doc_id, posting_dict)| (*doc_id, posting_dict.len()))
+            .collect()
     }
 
     /// Report the total number of times a word appears in a document
@@ -218,9 +280,75 @@ impl PositionalIndex {
         Ok(result)
     }
 
-    /// States whether the index has the given word
-    fn has_word(&self, word: &str) -> bool {
-        self.index.contains_key(word)
+    /// Get the Raw term frequency (term count / document length) for a word in a document
+    fn term_frequency(&self, word: &str, document: usize) -> PyResult<f64> {
+        let term_count = self.term_count(word, document)?;
+        Ok(term_count as f64 / *self.doc_lengths.get(document).unwrap() as f64)
+    }
+
+    /// Get a numpy array of all the document counts in the corpus
+    fn doc_count_vector(&self) -> Py<PyArray1<f64>> {
+        self.term_matrix(|_word, term_idx| term_idx.postings.len() as f64)
+    }
+
+    /// Get a numpy array of all the document frequencies in the corpus
+    fn doc_freq_vector(&self) -> Py<PyArray1<f64>> {
+        self.term_matrix(|word, _term_idx| self.document_frequency(word))
+    }
+
+    /// Get a term matrix (|V| x 1) of all of the inverse document frequencies.
+    fn idf_vector(&self) -> Py<PyArray1<f64>> {
+        self.term_matrix(|word, _term_idx| self.idf(word))
+    }
+
+    /// Get a numpy array of the number of times words appeared in the corpus.
+    fn word_count_vector(&self) -> Py<PyArray1<f64>> {
+        self.term_matrix(|_word, term_idx| term_idx.term_count as f64)
+    }
+
+    /// Get a vector of the overall frequencies of words in the corpus
+    fn word_freq_vector(&self) -> Py<PyArray1<f64>> {
+        self.term_matrix(|word, _term_idx| self.word_frequency(word))
+    }
+
+    /// Get a vector of the odds or log-odds of seeing a word at random
+    fn odds_vector(&self, sublinear: bool) -> Py<PyArray1<f64>> {
+        self.term_matrix(|word, _term_idx| self.odds_word(word, sublinear))
+    }
+
+    /// Get a term-document matrix as a numpy array, where the values in the matrix are counts
+    fn count_matrix(&self) -> Py<PyArray2<f64>> {
+        self.tf_matrix(None, None)
+    }
+
+    /// Get a term-document matrix showing the term frequencies of all of the term,document pairs
+    ///
+    /// If `sublinear` is set to Some(true) or None, it translates the term frequencies into log space
+    /// If `normalize` is set to Some(true), it returns the L1-norm of the raw count matrix
+    /// (in other words, the counts normalized to the lengths of the documents)
+    fn tf_matrix(&self, sublinear: Option<bool>, normalize: Option<bool>) -> Py<PyArray2<f64>> {
+        let sublinear_tf = sublinear.unwrap_or(true);
+        let l1_norm = normalize.unwrap_or(false);
+        self.term_document_matrix(|word, _term_idx, doc_id| {
+            let term_count = self.term_count(word, doc_id).unwrap() as f64;
+            let adjusted_count = if sublinear_tf {
+                term_count.log2() + 1.
+            } else {
+                term_count
+            };
+            if l1_norm {
+                adjusted_count / *self.doc_lengths.get(doc_id).unwrap() as f64
+            } else {
+                adjusted_count
+            }
+        })
+    }
+
+    /// Get a one-hot encoding matrix (showing all of the places where a given word exists/doesn't exist)
+    fn one_hot_matrix(&self) -> Py<PyArray2<f64>> {
+        self.term_document_matrix(|_w, term_idx, doc_id| {
+            term_idx.postings.contains_key(&doc_id) as u8 as f64
+        })
     }
 
     /// Searches for all of the documents where a given set of words appears
@@ -256,13 +384,54 @@ impl PositionalIndex {
 }
 
 #[pyproto]
-impl PyMappingProtocol for PositionalIndex {
+impl PySequenceProtocol for PositionalIndex {
     fn __len__(&self) -> usize {
         self.num_documents
+    }
+
+    fn __contains__(&self, item: &str) -> bool {
+        self.index.contains_key(item)
     }
 }
 
 impl PositionalIndex {
+    /// A helper function for creating term-document matrices (e.g. based on a word)
+    fn term_document_matrix<F>(&self, func: F) -> Py<PyArray2<f64>>
+    where
+        F: std::ops::Fn(&str, &TermIndex, usize) -> f64 + std::marker::Sync,
+    {
+        Python::with_gil(|py| {
+            let td_matrix: Vec<Vec<f64>> = self
+                .index
+                .par_iter()
+                .map(|(word, term_idx)| {
+                    // set a zeroed document
+                    let mut zero_vec = vec![0.; self.num_documents];
+                    term_idx.postings.keys().for_each(|doc_id| {
+                        let doc_val = func(word, term_idx, *doc_id);
+                        zero_vec[*doc_id] = doc_val;
+                    });
+                    zero_vec
+                })
+                .collect();
+            PyArray2::from_vec2(py, &td_matrix).unwrap().to_owned()
+        })
+    }
+
+    /// A helper function to create word-level matrices (computing statistics for all the words in the vocab)
+    fn term_matrix<F>(&self, func: F) -> Py<PyArray1<f64>>
+    where
+        F: std::ops::Fn(&str, &TermIndex) -> f64 + std::marker::Sync,
+    {
+        Python::with_gil(|py| {
+            let doc_count_vec: Vec<f64> = self
+                .index
+                .par_iter()
+                .map(|(word, term_idx)| func(word, term_idx))
+                .collect();
+            PyArray1::from_vec(py, doc_count_vec).to_owned()
+        })
+    }
     /// Finds all of the positions for documents containing the set of words.
     ///
     /// Returns results in form of (doc_id, first index, last index, raw start index, raw end index)
@@ -533,11 +702,10 @@ fn ngrams_from_documents(
     prefix: Option<String>,
     suffix: Option<String>,
 ) -> Vec<Vec<String>> {
-    let mut ngram_docs = Vec::new();
-    for document in documents {
-        ngram_docs.push(ngram(document, n, sep, prefix.clone(), suffix.clone()))
-    }
-    ngram_docs
+    documents
+        .par_iter()
+        .map(|document| ngram(document.to_vec(), n, sep, prefix.clone(), suffix.clone()))
+        .collect()
 }
 /// Takes a list of words and transforms it into a list of n-grams
 ///
