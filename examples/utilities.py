@@ -22,4 +22,4 @@ def tokenizer(document: str) -> tokenize.TokenizeResult:
     word_tokenizer = functools.partial(
         tokenize.tokenize_regex_positions, r"(?:^|\b)[A-Za-z]+(?:$|\b)"
     )
-    return tokenize.postprocess_positions([str.lower], word_tokenizer(document))
+    return tokenize.postprocess_positions([str.lower], word_tokenizer, document)

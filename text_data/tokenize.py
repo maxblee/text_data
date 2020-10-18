@@ -3,21 +3,21 @@
 The primary motivation behind this module is that effectively
 presenting search results revolves around knowing the positions
 of the words *prior* to tokenization. In order to handle these raw
-positions, the index `text_data.Corpus` uses optionally stores the
+positions, the index :class:`text_data.index.Corpus` uses stores the
 original character-level positions of words.
 
-This module offers basic ways to produce those positions for use
-in `text_data.Corpus`. However, you'll likely need to customize
-them for most applications. In order to do that, you just need to create
-a function that takes a string of text and converts it into two lists:
-one with the list of words and another with a list of tuples, each of
-them having two integers (the first for the starting character of the
-original text, the other with the ending character).
+This module offers a default tokenizer that you can use
+for :class:`text_data.index.Corpus`. However, you'll likely need to customize
+them for most applications. That said, doing so should not be difficult.
 
-Additionally, I've supplied a few off-the-shelf functions that should often
-be useful:
-
-- whitespace_tokenizer
+One of the functions in this module, :func:`~text_data.tokenize.corpus_tokenizer`,
+is designed specifically to create tokenizers that can be used
+directly by :class:`text_data.index.Corpus`. All you have to do
+is create a regular expression that splits words from nonwords
+and then create a series of postprocessing functions to clean the
+text (including, optionally, removing tokens). If possible,
+I would recommend taking this approach, since it allows you
+to mostly ignore the picky preferences of the underlying API.
 """
 import functools
 import re
@@ -70,27 +70,34 @@ def tokenize_regex_positions(
 
 def postprocess_positions(
     postprocess_funcs: List[Callable[[str], Optional[str]]],
-    tokenized_docs: TokenizeResult,
+    tokenize_func: Callable[[str], TokenizeResult],
+    document: str,
 ) -> TokenizeResult:
     """Runs postprocessing functions to produce final tokenized documents.
 
-    This function allows you to take results from `tokenize_regex_positions`
+    This function allows you to take :func:`~text_data.tokenize.tokenize_regex_positions`
     (or something that has a similar function signature) and run postprocessing
-    on them.
+    on it. It requires that you also give it a document, which it will tokenize
+    using the tokenizing function you give it.
 
     These postprocessing functions should take a string (i.e. one of the individual tokens),
     but they can return either a string or None. If they return None, the token
     will not appear in the final tokenized result.
 
     Args:
-        postprocess_funcs: A list of postprocessing functions (e.g. `str.lower`)
-        tokenized_docs: The tokenized results (e.g. the output of `tokenize_regex_positions`)
+        postprocess_funcs: A list of postprocessing functions (e.g. :code:`str.lower`)
+        tokenize_func: A function that takes raw text and converts it into
+            a list of strings and a list of character-level positions
+            (e.g. the output of :func:`text_data.tokenize.tokenize_regex_positions`)
+        document: The (single) text you want to tokenize.
+        tokenized_docs: The tokenized results
+            (e.g. the output of :func:`text_data.tokenize.tokenize_regex_positions`)
     """
     post_tokens = []
     post_spans = []
     # there's probably a more elegant way to do this, but default for a,b in x doesn't
     # work here because spans is a tuple
-    tokens, spans = tokenized_docs
+    tokens, spans = tokenize_func(document)
     for token, span in zip(tokens, spans):
         func_result = token
         for func in postprocess_funcs:
@@ -102,28 +109,46 @@ def postprocess_positions(
     return post_tokens, post_spans
 
 
-boundary_tokenizer = functools.partial(tokenize_regex_positions, r"\w+")
-whitespace_tokenizer = functools.partial(tokenize_regex_positions, r"\s+")
+def corpus_tokenizer(
+    regex_patten: str,
+    postprocess_funcs: List[Callable[[str], Optional[str]]],
+    inverse_match: bool = False,
+) -> Callable[[str], TokenizeResult]:
+    r"""This is designed to make it easy to build a custom tokenizer for :class:`text_data.index.Corpus`.
 
+    It acts as a combination of :func:`~text_data.tokenize.tokenize_regex_positions` and
+    :func:`~text_data.tokenize.postprocess_positions`, making it simple to create
+    tokenizers for :class:`text_data.index.Corpus`.
 
-def default_tokenizer(document_text: str) -> TokenizeResult:
-    """This is the default tokenizer used in `text_data.Corpus`.
+    In other words, if you pass the tokenizer a regular expression pattern, set :code:`inverse_match`
+    as you would for :func:`~text_data.tokenize.tokenize_regex_positions`, and add
+    a list of postprocessing functions as you would for :func:`~text_data.tokenize.postprocess_positions`,
+    this tokenizer will return a function that you can use directly as an argument in :class:`text_data.index.Corpus`.
 
-    Functionally, it is very simple. It splits on word boundaries
-    and then converts text into lowercase.
+    Examples:
+        Let's say that we want to build a tokenizing function that splits on vowels or whitespace.
+        We also want to lowercase all of the remaining words:
 
-    Args:
-        document_text: The document you're tokenizing.
+        >>> split_vowels = corpus_tokenizer(r"[aeiou\s]+", [str.lower], inverse_match=True)
+        >>> split_vowels("Them and you")
+        (['th', 'm', 'nd', 'y'], [(0, 2), (3, 4), (6, 8), (9, 10)])
+
+        You can additionally use this function to remove stopwords, although
+        `I generally would recommend against it <http://languagelog.ldc.upenn.edu/myl/Monroe.pdf>`_.
+        The postprocessing functions optionally return a string or a :code:`NoneType`,
+        and :code:`None` values simply don't get tokenized:
+
+        >>> skip_stopwords = corpus_tokenizer(r"\w+", [lambda x: x if x != "the" else None])
+        >>> skip_stopwords("I ran to the store")
+        (['I', 'ran', 'to', 'store'], [(0, 1), (2, 5), (6, 8), (13, 18)])
     """
-    return postprocess_positions([str.lower], boundary_tokenizer(document_text))
+    tokenize_func = functools.partial(
+        tokenize_regex_positions, regex_patten, inverse_match=inverse_match
+    )
+    return functools.partial(postprocess_positions, postprocess_funcs, tokenize_func)
 
 
-def query_tokenizer(document_text: str) -> List[str]:
-    """This is identical to `default_tokenizer` but it doesn't include positions.
-
-    The purpose of this is to allow the tokenizer to be passed into `text_data.Query`.
-
-    Args:
-        document_text: The query you're tokenizing.
-    """
-    return document_text.split()
+#: This is the default tokenizer for :code:`text_data.index.Corpus`.
+#:
+#: It simply splits on words (:code:`"\w+"`) and lowercases words.
+default_tokenizer = corpus_tokenizer(r"\w+", [str.lower])

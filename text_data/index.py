@@ -43,10 +43,20 @@ import numpy as np
 from text_data import core, tokenize
 from text_data.query import Query, QueryItem
 
-# represents the return result of a query position
+#: This represents the position of a word or phrase within a document.
+#:
+#: See :meth:`text_data.index.Corpus.search_occurrences` for more details and an example.
+#:
+#: Args:
+#:      doc_id (int): The index of the document within the index
+#:      first_idx (int): The index of the first word within the tokenized document at :code:`corpus.tokenized_documents[doc_id]`.
+#:      last_idx (int): The index of the last word within the tokenized document at :code:`corpus.tokenized_documents[doc_id]`.
+#:      raw_start (Optional[int]): The starting character-level index within the raw string document at :code:`corpus.documents[doc_id]`.
+#:      raw_end (Optional[int]): The index after the ending character-level index within the raw string document at :code:`corpus.documents[doc_id]`.
 PositionResult = collections.namedtuple(
     "PositionResult", "doc_id first_idx last_idx raw_start raw_end"
 )
+
 SearchResult = Union[int, PositionResult]
 CorpusClass = TypeVar("CorpusClass", bound="Corpus")
 
@@ -1125,7 +1135,7 @@ class Corpus(WordIndex):
     def search_documents(
         self,
         query: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ) -> Set[int]:
         """Search documents from a query.
 
@@ -1158,7 +1168,7 @@ class Corpus(WordIndex):
     def search_occurrences(
         self,
         query: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ) -> Set[PositionResult]:
         """Search for matching positions within a search.
 
@@ -1202,7 +1212,7 @@ class Corpus(WordIndex):
     def ranked_search(
         self,
         query_string: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ) -> List[List[PositionResult]]:
         """This produces a list of search responses in ranked order.
 
@@ -1310,7 +1320,7 @@ class Corpus(WordIndex):
     def display_search_results(
         self,
         search_query: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
         max_results: Optional[int] = None,
         window_size: Optional[int] = None,
     ) -> display.HTML:
@@ -1339,7 +1349,7 @@ class Corpus(WordIndex):
     def _show_html_occurrences(
         self,
         search_query: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
         max_results: Optional[int] = None,
         window_size: Optional[int] = None,
     ) -> Tuple[str, int]:
@@ -1408,7 +1418,7 @@ class Corpus(WordIndex):
     def search_document_count(
         self,
         query_string: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ) -> int:
         """Finds the total number of documents matching a query.
 
@@ -1433,7 +1443,7 @@ class Corpus(WordIndex):
     def search_document_freq(
         self,
         query_string: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ) -> float:
         """Finds the percentage of documents that match a query.
 
@@ -1457,7 +1467,7 @@ class Corpus(WordIndex):
     def search_occurrence_count(
         self,
         query_string: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ) -> int:
         """Finds the total number of occurrences you have for the given query.
 
@@ -1487,7 +1497,7 @@ class Corpus(WordIndex):
         metric_func: Callable[[str, Callable[[str], List[str]]], Union[float, int]],
         metric_name: str,
         queries: List[str],
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ):
         """Creates a bar chart given a callable that returns a metric.
 
@@ -1517,7 +1527,7 @@ class Corpus(WordIndex):
     def display_document_count(
         self,
         queries: List[str],
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ):
         """Returns a bar chart (in altair) showing the queries with the largest number of documents.
 
@@ -1537,7 +1547,7 @@ class Corpus(WordIndex):
     def display_document_frequency(
         self,
         queries: List[str],
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ):
         """Displays a bar chart showing the percentages of documents with a given query.
 
@@ -1557,7 +1567,7 @@ class Corpus(WordIndex):
     def display_occurrence_count(
         self,
         queries: List[str],
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ):
         """Display a bar chart showing the number of times a query matches.
 

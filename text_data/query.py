@@ -1,31 +1,80 @@
-"""Build and run search queries for `Corpus`."""
+"""This builds and runs search queries for :class:`text_data.index.Corpus`.
+
+For the most part, you won't be using this directly. Instead, you'll likely
+be using :class:`text_data.index.Corpus`. However, viewing the :code:`__repr__`
+for the query you're running can be helpful for debugging or validating
+queries.
+"""
 import collections
 import re
 from typing import Callable, List
 
-from text_data import tokenize
-
 QUERY_TERMS = {"AND", "OR", "NOT"}
+#: This represents an set of words you want to search for.
+#:
+#: Each query item has attached to it a set of words,
+#: an identifier stating whether the query terms are part of
+#: an exact phrase (i.e. whether the order matters)
+#: and what kind of query (a boolean AND query, a boolean OR query, or a boolean NOT query),
+#: is being performed on the query.
+#:
+#: Args:
+#:      words (List[str]): A list of words representing all of the words that will be searched for.
+#:      exact (bool): Whether the search terms are part of an exact phrase match
+#:      modifier (str): The boolean query (AND, OR, or NOT)
 QueryItem = collections.namedtuple("QueryItem", "words exact modifier")
 
 
 class Query:
-    """Represents a query.
+    r"""Represents a query. This is used internaly by :class:`text_data.index.Corpus` to handle searching.
 
-    This is used internaly by `Corpus` to handle searching.
+    The basic formula for writing queries should be familiar; all of the
+    queries are simple boolean phrases. But here are more complete specifications:
 
-    To parse a query, you need to use the following syntax:
-        - Exact phrase searches should be enclosed in quotes
-        - Inexact phrase searches should not be in quotes.
-        - You can use any of the query terms to combine queries:
-            - AND to find things matching *all* of the queries
-            - OR to find things matching *any* of the queries
-            - NOT to find things matching one query but *not* the other
-        - To include any of the above query terms as search parameters,
-        you must encapsulate them in quotes. You must do the same for phrases
-        ending in spaces *even if you have a customized tokenizer*.
-        - Query terms *must* be in all caps. This is designed to make unintentionally
-        entering a query term less likely without sacrificing readability.
+    In order to search for places where two words appeared, you simply need
+    to type the two words::
+
+        Query("i am")
+
+    Searches using this query will look for documents where the words "i"
+    and "am" both appeared. To have them look for places where either
+    word appeared, use an "OR" query::
+
+        Query("i OR am")
+
+    Alternatively, you can look for documents where one word occurred but the other
+    didn't using a NOT query::
+
+        Query("i NOT am")
+
+    To search for places where the phrase "i am" appeared, use quotes::
+
+        Query("'i am'")
+
+    You can use AND queries to limit the results of previous sets of queries.
+    For instance::
+
+        Query("i OR am AND you")
+
+    will find places where either where "you" and *either* "I" or "am" appeared.
+
+    In order to search for the literal words 'AND', 'OR', or 'NOT',
+    you must encapsulate them in quotes::
+
+        Query("'AND'")
+
+    Finally, you may customize the way your queries are parsed by passing
+    a tokenizer. By default, :code:`Query` identifies strings of text
+    that it needs to split and uses :code:`str.split` to split the strings.
+    But you can change how to split the text, which can be helpful/necessary
+    if the words you're searching for have spaces in them. For instance,
+    this will split the words you're querying by spaces, unless the words
+    are 'united states'::
+
+        >>> import re
+        >>> us_phrase = re.compile(r"(united states|\S+)")
+        >>> Query("he is from the united states", query_tokenizer=us_phrase.findall)
+        <Query ([[QueryItem(words=['he', 'is', 'from', 'the', 'united states'], exact=False, modifier='OR')]])>
 
     Args:
         query_string: The human-readable query
@@ -38,7 +87,7 @@ class Query:
     def __init__(
         self,
         query_string: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ):
         # starting with a key word should raise an error
         if (
@@ -69,7 +118,7 @@ class Query:
         self,
         query: str,
         last_modifier: str,
-        query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+        query_tokenizer: Callable[[str], List[str]] = str.split,
     ) -> List[QueryItem]:
         """This parses queries between QUERY_TERM objects. Internal to init.
 

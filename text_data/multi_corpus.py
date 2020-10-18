@@ -20,7 +20,7 @@ from typing import Any, Callable, List, Optional, Tuple
 from IPython import display
 import numpy as np
 
-from text_data import Corpus, tokenize
+from text_data import Corpus
 from text_data.core import requires_display_extra
 
 
@@ -102,7 +102,7 @@ def distance_heatmap(
 def display_multiple_searches(
     corpuses: List[Corpus],
     search_query: str,
-    query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
+    query_tokenizer: Callable[[str], List[str]] = str.split,
     max_results: Optional[int] = None,
     window_size: Optional[int] = None,
     total_max: Optional[int] = None,
