@@ -20,6 +20,7 @@ through sets of documents. In addition, it offers tools for visually seeing the 
 """
 import collections
 import functools
+import html
 import itertools
 import sys
 from typing import (
@@ -797,21 +798,96 @@ class WordIndex:
 
 
 class Corpus(WordIndex):
-    """This class holds the core data behind text_data.
+    r"""This is probably going to be your main entrypoint into :code:`text_data`.
 
-    It holds the raw text, the index, and the tokenized text.
-    Using it, you can compute statistics about the corpus,
-    you can query the corpus, or you can visualize some findings.
+    The corpus holds the raw text, the index, and the tokenized text
+    of whatever you're trying to analyze. Its primary role is to extend
+    the functionality of :class:`~text_data.index.WordIndex` to
+    support searching. This means that you can use the :code:`Corpus`
+    to search for arbitrarily long phrases using boolean search
+    methods (AND, NOT, BUT).
 
-    The separator, prefix and suffix are all designed for updating
-    n-gram indexes (just using default values.)
+    In addition, it allows you to add indexes so you can calculate
+    statistics on phrases. By using :meth:`~text_data.index.Corpus.add_ngram_index`,
+    you can figure out the frequency or TF-IDF values of multi-word
+    phrases while still being able to search through your normal index.
+
+    **Initializing Data**
+
+    To instantiate the corpus, you need to include a list of documents
+    where each document is a string of text and a tokenizer. There
+    is a default tokenizer, which simply lowercases words and splits
+    documents on :code:`r"\w+"`. For most tasks, this will be insufficient.
+    But :py:mod:`text_data.tokenize` offers convenient ways that should
+    make building the vast majority of tokenizers easy.
+
+    The :code:`Corpus` can be instantiated using :code:`__init__` or by
+    using :meth:`~text_data.index.Corpus.chunks`, which yields a generator,
+    adding a mini-index. This allows you to technically perform
+    calculations in-memory on larger databases.
+
+    **Updating Data**
+
+    There are two methods for updating or adding data to the :code:`Corpus`.
+    :meth:`~text_data.index.Corpus.update` allows you to add new documents
+    to the corpus. :meth:`~text_data.index.Corpus.add_ngram_index`
+    allows you to add multi-word indexes.
+
+    **Searching**
+
+    There are a few methods devoted to searching. :meth:`~text_data.index.Corpus.search_documents`
+    allows you to find all of the individual documents matching a query.
+    :meth:`~text_data.index.Corpus.search_occurrences` shows all of the individual
+    occurrences that matched your query. :meth:`~text_data.index.Corpus.ranked_search`
+    finds all of the individual occurrences and sorts them according to a variant
+    of their TF-IDF score.
+
+    **Statistics**
+
+    Three methods allow you to get statistics about a search.
+    :meth:`~text_data.index.Corpus.search_document_count` allows you to find
+    the total number of documents matching your query.
+    :meth:`~text_data.index.Corpus.search_document_freq` shows the proportion
+    of documents matching your query. And :meth:`~text_data.index.Corpus.search_occurrence_count`
+    finds the total number of matches you have for your query.
+
+    **Display**
+
+    There are a number of functions designed to help you visually see the results of your
+    query. :meth:`~text_data.index.Corpus.display_document` and
+    :meth:`~text_data.index.Corpus.display_documents` render your documents in HTML.
+    :meth:`~text_data.index.Corpus.display_document_count`,
+    :meth:`~text_data.index.Corpus.display_document_frequency`,
+    and :meth:`~text_data.index.Corpus.display_occurrence_count`
+    all render bar charts showing the number of query results you got.
+    And :meth:`~text_data.index.Corpus.display_search_results` shows
+    the result of your search.
+
+    Attributes:
+        documents: A list of all the raw, non-tokenized documents in the corpus.
+        tokenizer: A function that converts a list of strings (one of the documents
+            from documents into a list of words and a list of the character-level
+            positions where the words are located in the raw text)
+        tokenized_documents: A list of the tokenized documents (each a list of words)
+        ngram_indexes: A list of :class:`~text_data.index.WordIndex` objects
+            for multi-word (n-gram) indexes. See :meth:`~text_data.index.Corpus.add_ngram_index`
+            for details.
+        ngram_sep: A separator in between words. See :meth:`~text_data.index.Corpus.add_ngram_index`
+            for details.
+        ngram_prefix: A prefix to go before any n-gram phrases. See :meth:`~text_data.index.Corpus.add_ngram_index`
+            for details.
+        ngram_suffix: A suffix to go after any n-gram phrases. See :meth:`~text_data.index.Corpus.add_ngram_index`
+            for details.
 
     Args:
-        documents: A list of raw text items (not tokenized)
-        tokenizer: A function to tokenize the documents
-        sep: The separator you want to use for computing n-grams. Defaults to " "
-        prefix: The prefix for n-grams. Defaults to "".
-        suffix: The suffix for n-grams. Defaults to "".
+        documents: A list of the raw, un-tokenized texts.
+        tokenizer: A function to tokenize the documents. See :py:mod:`text_data.tokenize` for details.
+        sep: The separator you want to use for computing n-grams. See :meth:`~text_data.index.Corpus.add_ngram_index`
+            for details.
+        prefix: The prefix you want to use for n-grams. See :meth:`~text_data.index.Corpus.add_ngram_index`
+            for details.
+        suffix: The suffix you want to use for n-grams. See :meth:`~text_data.index.Corpus.add_ngram_index`
+            for details.
     """
 
     def __init__(
@@ -823,7 +899,6 @@ class Corpus(WordIndex):
         sep: Optional[str] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
-        include_positions: bool = True,
     ):
         self.documents = documents
         self.tokenizer = tokenizer
@@ -852,21 +927,27 @@ class Corpus(WordIndex):
         suffix: Optional[str] = None,
         chunksize: int = 1_000_000,
     ) -> Generator[CorpusClass, None, None]:
-        """Iterates through documents, yielding a `Corpus` with `chunksize` documents.
+        """Iterates through documents, yielding a :code:`Corpus` with :code:`chunksize` documents.
 
-        This is designed to allow you to technically use `Corpus` on large
+        This is designed to allow you to technically use :code:`Corpus` on large
         document sets. However, you should note that searching for documents
         will only work within the context of the current chunk.
 
         The same is true for any frequency metrics. As such, you should probably
-        limit metrics to raw counts.
+        limit metrics to raw counts or aggregations you've derived from raw counts.
+
+        Example:
+            >>> for docs in Corpus.chunks(["chunk one", "chunk two"], chunksize=1):
+            ...     print(len(docs))
+            1
+            1
 
         Args:
             documents: A list of raw text items (not tokenized)
             tokenizer: A function to tokenize the documents
-            sep: The separator you want to use for computing n-grams. Defaults to " "
-            prefix: The prefix for n-grams. Defaults to "".
-            suffix: The suffix for n-grams. Defaults to "".
+            sep: The separator you want to use for computing n-grams.
+            prefix: The prefix for n-grams.
+            suffix: The suffix for n-grams.
             chunksize: The number of documents in each chunk.
         """
         if chunksize < 1:
@@ -880,6 +961,7 @@ class Corpus(WordIndex):
                 current_chunksize = 0
             current_chunksize += 1
             current_document_set.append(document)
+        yield cls(current_document_set, tokenizer, sep, prefix, suffix)
 
     def add_ngram_index(
         self,
@@ -891,11 +973,45 @@ class Corpus(WordIndex):
     ):
         """Adds an n-gram index to the corpus.
 
-        This is intended solely for being able to compute statistics
-        on e.g. bigrams or trigrams.
+        This creates a :class:`~text_data.index.WordIndex` object
+        that you can access by typing :code:`self.ngram_indexes[n]`.
 
-        **Note**: If you have already added an n-gram index for the corpus,
-        this will re-index.
+        There are times when you might want to compute
+        TF-IDF scores, word frequency scores or similar scores
+        over a multi-word index. For instance, you might want to know how
+        frequently someone said 'United States' in a speech, without
+        caring how often they used the word 'united' or 'states'.
+
+        This function helps you do that. It automatically splits up your
+        documents into an overlapping set of :code:`n`-length phrases.
+
+        Internally, this takes each of your tokenized documents,
+        merges them into lists of :code:`n`-length phrases, and joins
+        each of those lists by a space. However, you can customize
+        this behavior. If you set :code:`prefix`, each of the n-grams
+        will be prefixed by that string; if you set :code:`suffix`,
+        each of the n-grams will end with that string. And if you
+        set :code:`sep`, each of the words in the n-gram will be separated
+        by the separator.
+
+        Example:
+            Say you have a simple four word corpus. If you use the default
+            settings, here's what your n-grams will look like:
+
+            >>> corpus = Corpus(["text data is fun"])
+            >>> corpus.add_ngram_index(n=2)
+            >>> corpus.ngram_indexes[2].vocab_list
+            ['data is', 'is fun', 'text data']
+
+            By altering :code:`sep`, :code:`prefix`, or :code:`suffix`,
+            you can alter that behavior. But, be careful to set :code:`default`
+            to :code:`False` if you want to change the behavior
+            from something you set up in :code:`__init__`. If you don't,
+            this will use whatever settings you instantiated the class with.
+
+            >>> corpus.add_ngram_index(n=2, sep="</w><w>", prefix="<w>", suffix="</w>", default=False)
+            >>> corpus.ngram_indexes[2].vocab_list
+            ['<w>data</w><w>is</w>', '<w>is</w><w>fun</w>', '<w>text</w><w>data</w>']
 
         Args:
             n: The number of n-grams (defaults to unigrams)
@@ -919,13 +1035,11 @@ class Corpus(WordIndex):
         self.ngram_indexes[n] = WordIndex(ngram_words, None)
 
     def update(self, new_documents: List[str]):
-        """Updates the indexes for the corpus, given a new set of documents.
-
-        This also updates the n-gram indexes.
+        """Adds new documents to the corpus's index and to the n-gram indices.
 
         Args:
             new_documents: A list of new documents. The tokenizer used is the same
-            tokenizer used to initialize the corpus.
+                tokenizer used to initialize the corpus.
         """
         if len(new_documents) > 0:
             tokenized_docs = [self.tokenizer(doc) for doc in new_documents]
@@ -1000,8 +1114,12 @@ class Corpus(WordIndex):
                 query_docs.update(subquery_docs)
             elif modifier_type == {"NOT"}:
                 query_docs -= subquery_docs
+        # this tries to figure out the type of result we have
+        # whether we're dealing with occurrence searches or document searches
         if all((isinstance(q, PositionResult) for q in subquery_results)):
-            return {q for q in query_results if q.doc_id in query_docs}  # type: ignore
+            # need this check because set() passes the above check
+            if len(subquery_results) > 0:
+                return {q for q in query_results if q.doc_id in query_docs}  # type: ignore
         return query_docs  # type: ignore
 
     def search_documents(
@@ -1012,17 +1130,22 @@ class Corpus(WordIndex):
         """Search documents from a query.
 
         In order to figure out the intracacies of writing queries,
-        you should view `text_data.query.Query`. In general,
+        you should view :py:mod:`text_data.query.Query`. In general,
         standard boolean (AND, OR, NOT) searches work perfectly reasonably.
-        You should generally not need to set `query_tokenizer` to anything
+        You should generally not need to set :code:`query_tokenizer` to anything
         other than the default (string split).
 
         This produces a set of unique documents, where each document is
         the index of the document. To view the documents by their ranked importance
-        (ranked largely using TF-IDF), use `ranked_documents`.
+        (ranked largely using TF-IDF), use :meth:`~text_data.index.Corpus.ranked_search`.
+
+        Example:
+            >>> corpus = Corpus(["this is an example", "here is another"])
+            >>> assert corpus.search_documents("is") == {0, 1}
+            >>> assert corpus.search_documents("example") == {0}
 
         Args:
-            query: A string boolean query (as defined in `text_data.Query`)
+            query: A string boolean query (as defined in :class:`text_data.query.Query`)
             query_tokenizer: A function to tokenize the words in your query. This
                 allows you to optionally search for words in your index that include
                 spaces (since it defaults to string.split).
@@ -1043,18 +1166,33 @@ class Corpus(WordIndex):
         matching your query. In addition, this is used internally
         to display search results.
 
-        Args:
-            query: The string query. See `text_data.query.Query` for details.
-            query_tokenizer: The tokenizing function for the query.
-            See `text_data.query.Query` or `text_data.Corpus.search_documents`
-            for details.
+        Each matching position comes in the form of a tuple where
+        the first field :code:`doc_id` refers to the position
+        of the document, the second field :code:`first_idx`
+        refers to the starting index of the occurrence (among
+        the tokenized documents), :code:`last_idx` refers to the
+        last index of the occurrence, :code:`raw_start` refers
+        to the starting index of the occurrence from
+        *within the raw, non-tokenized documents.* :code:`raw_end`
+        refers to the *index after the last character of the matching
+        result* within the non-tokenized documents. There is not really
+        a reason behind this decision.
 
-        Returns:
-            A set of tuples, where each tuple contains (in order)
-            the index of the document (within self.documents),
-            the starting index of the match (within self.tokenized_documents[document id]),
-            the ending index of the match,
-            the starting index of the text (within self.documents), and the ending index of the text.
+        Example:
+            >>> corpus = Corpus(["this is fun"])
+            >>> result = list(corpus.search_occurrences("'this is'"))[0]
+            >>> result
+            PositionResult(doc_id=0, first_idx=0, last_idx=1, raw_start=0, raw_end=7)
+            >>> corpus.documents[result.doc_id][result.raw_start:result.raw_end]
+            'this is'
+            >>> corpus.tokenized_documents[result.doc_id][result.first_idx:result.last_idx+1]
+            ['this', 'is']
+
+        Args:
+            query: The string query. See :class:`text_data.query.Query` for details.
+            query_tokenizer: The tokenizing function for the query.
+                See :class:`text_data.query.Query` or :meth:`~text_data.index.Corpus.search_documents`
+                for details.
         """
         return self._search_item(  # type: ignore
             self._yield_subquery_phrase_results,  # type: ignore
@@ -1074,21 +1212,24 @@ class Corpus(WordIndex):
 
         To compute the TF-IDF scores, I simply have computed the dot products
         between the raw query counts and the TF-IDF scores of all the unique
-        words in the query. This is roughly equivalent to the `ltn.lnn`
-        normalization scheme [described in Manning](https://nlp.stanford.edu/IR-book/html/htmledition/document-and-query-weighting-schemes-1.html).
+        words in the query. This is roughly equivalent to the :code:`ltn.lnn`
+        normalization scheme
+        `described in Manning <https://nlp.stanford.edu/IR-book/html/htmledition/document-and-query-weighting-schemes-1.html>`_.
         (The catch is that I have normalized the term-frequencies in the document
         to the length of the document.)
 
-        There is one result for each document. This result is ordered
-        first by the number of words in the match and second by the word's
-        proximity to the next word in the document.
+        Each item in the resulting list is a list referring to a single item.
+        The items inside each of those lists are of the same format you get from
+        :meth:`~text_data.index.Corpus.search_occurrences`. The first item in
+        each list is either an item having the largest number of words in it
+        or is the item that's the nearest to another match within the document.
 
         Args:
             query: Query string
             query_tokenizer: Function for tokenizing the results.
 
         Returns:
-            A list of tuples, each in the same format as `search_occurrences`.
+            A list of tuples, each in the same format as :meth:`~text_data.index.Corpus.search_occurrences`.
         """
         query_results = []
         query = Query(query_string, query_tokenizer)
@@ -1249,11 +1390,16 @@ class Corpus(WordIndex):
                         if actual_start > 0:
                             results += "<b>&hellip;</b>"
                     if current_idx < item.raw_start:
-                        results += sel_doc[current_idx : item.raw_start]
-                    results += f"<b>{sel_doc[item.raw_start:item.raw_end]}</b>"
+                        results += self._escape_html(
+                            sel_doc[current_idx : item.raw_start]
+                        )
+                    block_text = self._escape_html(
+                        sel_doc[item.raw_start : item.raw_end]
+                    )
+                    results += f"<b>{block_text}</b>"
                     current_idx = item.raw_end
                 raw_end_window = max(current_idx, end_window)
-                results += sel_doc[current_idx:raw_end_window]
+                results += self._escape_html(sel_doc[current_idx:raw_end_window])
                 if raw_end_window < len(sel_doc):
                     results += "<b>&hellip;</b>"
                 results += "</p>"
@@ -1269,6 +1415,15 @@ class Corpus(WordIndex):
         By entering a search, you can get the total number of documents
         that match the query.
 
+        Example:
+            >>> corpus = Corpus(["the cow was hungry", "the cow likes the grass"])
+            >>> corpus.search_document_count("cow")
+            2
+            >>> corpus.search_document_count("grass")
+            1
+            >>> corpus.search_document_count("the")
+            2
+
         Args:
             query_string: The query you're searching for
             query_tokenizer: The tokenizer for the query
@@ -1282,6 +1437,17 @@ class Corpus(WordIndex):
     ) -> float:
         """Finds the percentage of documents that match a query.
 
+        Example:
+            >>> corpus = Corpus(["the cow was hungry", "the cow likes the grass"])
+            >>> corpus.search_document_freq("cow")
+            1.0
+            >>> corpus.search_document_freq("grass")
+            0.5
+            >>> corpus.search_document_freq("the grass")
+            0.5
+            >>> corpus.search_document_freq("the OR nonsense")
+            1.0
+
         Args:
             query_string: The query you're searching for
             query_tokenizer: The tokenizer for the query
@@ -1293,7 +1459,21 @@ class Corpus(WordIndex):
         query_string: str,
         query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
     ) -> int:
-        """Finds the total number of matches you have for a query.
+        """Finds the total number of occurrences you have for the given query.
+
+        This just gets the number of items in :meth:`~text_data.Corpus.search_occurrences`.
+        As a result, searching for occurrences where two separate words occur will find
+        the total number of places where either word occurs within the set of documents
+        where both words appear.
+
+        Example:
+            >>> corpus = Corpus(["the cow was hungry", "the cow likes the grass"])
+            >>> corpus.search_occurrence_count("the")
+            3
+            >>> corpus.search_occurrence_count("the cow")
+            5
+            >>> corpus.search_occurrence_count("'the cow'")
+            2
 
         Args:
             query_string: The query you're searching for
@@ -1341,6 +1521,10 @@ class Corpus(WordIndex):
     ):
         """Returns a bar chart (in altair) showing the queries with the largest number of documents.
 
+        Note:
+            This method requires that you have :code:`altair` installed. To install,
+            type :code:`pip install text_data[display]` or :code:`poetry add text_data -E display`.
+
         Args:
             queries: A list of queries (in the same form you use to search for things)
             query_tokenizer: The tokenizer for the query
@@ -1357,6 +1541,10 @@ class Corpus(WordIndex):
     ):
         """Displays a bar chart showing the percentages of documents with a given query.
 
+        Note:
+            This method requires that you have :code:`altair` installed. To install,
+            type :code:`pip install text_data[display]` or :code:`poetry add text_data -E display`.
+
         Args:
             queries: A list of queries
             query_tokenizer: A tokenizer for each query
@@ -1371,7 +1559,11 @@ class Corpus(WordIndex):
         queries: List[str],
         query_tokenizer: Callable[[str], List[str]] = tokenize.query_tokenizer,
     ):
-        """Display the number of times a query matches.
+        """Display a bar chart showing the number of times a query matches.
+
+        Note:
+            This method requires that you have :code:`altair` installed. To install,
+            type :code:`pip install text_data[display]` or :code:`poetry add text_data -E display`.
 
         Args:
             queries: A list of queries
@@ -1386,8 +1578,19 @@ class Corpus(WordIndex):
 
         Internal for `display_document` and `display_documents`.
         """
-        content = self.documents[doc_idx]
+        content = self._escape_html(self.documents[doc_idx])
         return f"<p><b>Document at index {doc_idx}</b></p><p>{content}</p>"
+
+    def _escape_html(self, raw_text: str) -> str:
+        # the first part of this is built on the idea that if the content
+        # contains html we shouldn't necessarily see that
+        # the extra symbols are because of weird pretty printing behavior from
+        # jupyter (see https://stackoverflow.com/questions/16089089/escaping-dollar-sign-in-ipython-notebook)
+        return (
+            html.escape(raw_text)
+            # https://blogueun.wordpress.com/2014/01/04/escaping-in-mathjax/
+            .replace("$", "<span class='tex2jax_ignore'>$</span>")
+        )
 
     def display_document(self, doc_idx: int) -> display.HTML:
         """Print an entire document, given its index.

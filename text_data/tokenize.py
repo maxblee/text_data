@@ -126,4 +126,4 @@ def query_tokenizer(document_text: str) -> List[str]:
     Args:
         document_text: The query you're tokenizing.
     """
-    return default_tokenizer(document_text)[0]
+    return document_text.split()
