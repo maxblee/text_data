@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 6b9e72da039cd9d8260baa735f625a2d2eb9ddfdeeacdcfc1642e8bea1dd785c # shrinks to documents = [["<\u{7f}*\\🕴%\u{202e}*苾\u{1b}\u{a023a}$", "\'i5ú\u{e3f7d}\u{feff}\\殏\u{5b4f6}\u{acddb}"]]
+cc 137b97966da6d47c2ed537771a13eb61bec8e64351d9d97b43b76d327b948cdf # shrinks to documents_1 = [[""]], documents_2 = [[""]]

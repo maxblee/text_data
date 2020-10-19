@@ -18,6 +18,9 @@ makes a set of documents different from some other documents.
 The :class:`text_data.index.Corpus`, meanwhile, is a wrapper over :code:`WordIndex` that offers tools for searching
 through sets of documents. In addition, it offers tools for visually seeing the results of search queries.
 """
+# https://stackoverflow.com/questions/33533148/how-do-i-type-hint-a-method-with-the-type-of-the-enclosing-class
+from __future__ import annotations
+
 import collections
 import functools
 import html
@@ -67,6 +70,30 @@ class WordIndex:
     This is designed to allow people to be able to quickly compute statistics
     about the language used across a corpus. The class offers a couple of broad
     strategies for understanding the ways in which words are used across documents.
+
+    **Manipulating Indexes**
+    These functions are designed to allow you to create new indexes based
+    on ones you already have. They operate kind of like slices and filter
+    functions in :code:`pandas`, where your goal is to be able to
+    create new data structures that you can analyze independently from
+    ones you've already created. Most of them can also be used
+    with method chaining. However, some of these functions remove
+    positional information from the index, so be careful.
+
+    - :meth:`~text_data.index.WordIndex.copy` creates an identical copy of a :code:`WordIndex`
+      object.
+    - :meth:`~text_data.index.WordIndex.slice` and :meth:`~text_data.index.WordIndex.split_off`
+      both take sets of document indexes and create new indexes with only those
+      documents.
+    - :meth:`~text_data.index.WordIndex.add_documents` allows you to add new
+      documents into an existing :code:`WordIndex` object.
+      :meth:`~text_data.index.WordIndex.concat` similarly combines
+      :code:`WordIndex` objects into a single :code:`WordIndex`.
+    - :meth:`~text_data.index.WordIndex.flatten` takes a :code:`WordIndex`
+      and returns an identical index that only has one document.
+    - :meth:`~text_data.index.skip_words` takes a set of words
+      and returns a :code:`WordIndex` that does not have those words.
+    - :meth:`~text_data.index.reindex` changes the index of words.
 
     **Corpus Information**
 
@@ -179,7 +206,7 @@ class WordIndex:
     def __init__(
         self,
         tokenized_documents: List[List[str]],
-        indexed_locations: Optional[List[Tuple[int, int]]],
+        indexed_locations: Optional[List[Tuple[int, int]]] = None,
     ):
         self.index = core.PositionalIndex(tokenized_documents, indexed_locations)
 
@@ -189,6 +216,159 @@ class WordIndex:
     def __contains__(self, item: str) -> bool:
         """Determines whether the index has a given word."""
         return item in self.index
+
+    # Index manipulation
+    # These functions take create new indexes based on existing ones
+    # one of them — split_off — mutates the existing object;
+    # the others don't
+    @classmethod
+    def _from_index(cls, index: core.PositionalIndex) -> WordIndex:
+        """Creates an index from the Rust PositionalIndex."""
+        # probably a better way to do this, but this just sets an empty data
+        # and overrides the value of `self.index`
+        cls_item = cls([])
+        cls_item.index = index
+        return cls_item
+
+    def copy(self) -> WordIndex:
+        """This creates a copy of itself."""
+        return self._from_index(self.index.copy())
+
+    def reset_index(self, start_idx: Optional[int] = None):
+        """An in-place operation that resets the document indexes for this corpus.
+
+        When you reset the index, all of the documents change their
+        values, starting at :code:`start_idx` (and incrementing from there). For the most
+        part, you will not need to do this, since most of the library
+        does not give you the option to change the document indexes. However,
+        it may be useful when you're using :meth:`~text_data.index.WordIndex.slice`
+        or :meth:`~text_data.index.WordIndex.split_off`.
+
+        Args:
+            start_idx: The first (lowest) document index you want to set.
+                Values must be positive. Defaults to 0.
+        """
+        self.index.reset_index(start_idx)
+
+    def concatenate(self, other: WordIndex, ignore_index: bool = True) -> WordIndex:
+        """Creates a :code:`WordIndex` object with the documents of both this object and the other.
+
+        See :func:`text_data.multi_corpus.concatenate` for more details.
+
+        Args:
+            ignore_index: If set to :code:`True`, which is the default, the
+                document indexes will be re-indexed starting from 0.
+
+        Raises:
+            ValueError: If :code:`ignore_index` is set to :code:`False` and some
+                of the indexes overlap.
+        """
+        concat = self.index.concat(self.index, other.index, ignore_index)
+        return self._from_index(concat)
+
+    def add_documents(
+        self,
+        tokenized_documents: List[List[str]],
+        indexed_locations: Optional[List[Tuple[int, int]]] = None,
+    ):
+        """This function updates the index with new documents.
+
+        It operates similarly to :meth:`text_data.index.Corpus.update`,
+        taking new documents and mutating the existing one.
+
+        Example:
+            >>> tokenized_words = ["im just a simple document".split()]
+            >>> index = WordIndex(tokenized_words)
+            >>> len(index)
+            1
+            >>> index.num_words
+            5
+            >>> index.add_documents(["now im an entire corpus".split()])
+            >>> len(index)
+            2
+            >>> index.num_words
+            10
+        """
+        self.index.add_documents(tokenized_documents, indexed_locations)
+
+    def skip_words(self, words: Set[str]) -> WordIndex:
+        """Creates a :code:`WordIndex` without any of the skipped words.
+
+        This enables you to create an index that does not contain rare
+        words, for example. The index will not have any positions
+        associated with them, so be careful when implementing
+        it on a :class:`text_data.index.Corpus` object.
+
+        Example:
+            >>> skip_words = {"document"}
+            >>> corpus = Corpus(["example document", "document"])
+            >>> "document" in corpus
+            True
+            >>> without_document = corpus.skip_words(skip_words)
+            >>> "document" in without_document
+            False
+        """
+        index = self.index.skip_words(words)
+        return self._from_index(index)
+
+    def flatten(self) -> WordIndex:
+        """Flattens a multi-document index into a single-document corpus.
+
+        This creates a new :code:`WordIndex` object stripped of any positional
+        information that has a single document in it. However, the list of words
+        and their indexes remain.
+
+        Example:
+            >>> corpus = Corpus(["i am a document", "so am i"])
+            >>> len(corpus)
+            2
+            >>> flattened = corpus.flatten()
+            >>> len(flattened)
+            1
+            >>> assert corpus.most_common() == flattened.most_common()
+        """
+        index = self.index.flatten()
+        return self._from_index(index)
+
+    def slice(self, indexes: Set[int]) -> WordIndex:
+        """Returns an index that just contains documents from the set of words.
+
+        Args:
+            indexes: A set of index values for the documents.
+
+        Example:
+            >>> index = WordIndex([["example"], ["document"], ["another"], ["example"]])
+            >>> sliced_idx = index.slice({0, 2})
+            >>> len(sliced_idx)
+            2
+            >>> sliced_idx.most_common()
+            [('another', 1), ('example', 1)]
+        """
+        return self._from_index(self.index.slice(indexes))
+
+    def split_off(self, indexes: Set[int]) -> WordIndex:
+        """Returns an index with just a set of documents, while removing them from the index.
+
+        Args:
+            indexes: A set of index values for the documents.
+
+        Note:
+            This removes words from the index inplace. So be make sure you
+            want to do that before using this function.
+
+        Example:
+            >>> index = WordIndex([["example"], ["document"], ["another"], ["example"]])
+            >>> split_idx = index.split_off({0, 2})
+            >>> len(split_idx)
+            2
+            >>> len(index)
+            2
+            >>> split_idx.most_common()
+            [('another', 1), ('example', 1)]
+            >>> index.most_common()
+            [('document', 1), ('example', 1)]
+        """
+        return self._from_index(self.index.split_off(indexes))
 
     # Corpus Information
     # This section returns simple information about a corpus — how many
@@ -228,7 +408,7 @@ class WordIndex:
             >>> corpus.vocab_size
             4
         """
-        return self.index.vocab_size
+        return self.index.vocab_size()
 
     @property
     def num_words(self) -> int:
@@ -534,6 +714,9 @@ class WordIndex:
             sublinear: If true, returns the log odds.
         """
         return self.index.odds_vector(sublinear)
+
+    # Matrix statistics
+    # All of these functions create term-document matrix statistics
 
     def count_matrix(self) -> np.array:
         """Returns a matrix showing the number of times each word appeared in each document.
@@ -1043,6 +1226,43 @@ class Corpus(WordIndex):
                 self.tokenized_documents, n, sep, prefix, suffix
             )
         self.ngram_indexes[n] = WordIndex(ngram_words, None)
+
+    def add_documents(
+        self,
+        tokenized_documents: List[List[str]],
+        indexed_locations: Optional[List[Tuple[int, int]]] = None,
+    ):
+        """This overrides the :meth:`~text_data.index.WordIndex.add_documents` method.
+
+        Because :meth:`~text_data.index.Corpus` objects can have
+        n-gram indices, simply running :code:`add_documents` would
+        cause n-gram indices to go out of sync with the overall
+        corpus. In order to prevent that, this function raises
+        an error if you try to run it.
+
+        Raises:
+            NotImplementedError: Warns you to use :code:`~text_data.index.Corpus.update`
+            instead.
+        """
+        raise NotImplementedError(
+            "You can not use `add_documents` with a `Corpus`. Use `update` instead."
+        )
+
+    # def slice(self, indexes: Set[int]) -> Corpus:
+    #     """This creates a :code:`Corpus` object only including the documents listed.
+
+    #     This overrides the method in :meth:`text_data.index.WordIndex`, which
+    #     does the same thing (but without making changes to the underlying document set).
+
+    #     Args:
+    #         indexes: A set of document indexes you want to have in the new index.
+        
+    #     Example:
+    #         >>> corpus = Corpus(["example document", "another example", "yet another"])
+    #         >>> sliced_corpus = corpus.slice([1])
+    #         >>> len(sliced_corpus)
+    #         1
+    #         >>> sliced
 
     def update(self, new_documents: List[str]):
         """Adds new documents to the corpus's index and to the n-gram indices.

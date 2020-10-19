@@ -56,7 +56,7 @@ class Query:
 
         Query("i OR am AND you")
 
-    will find places where either where "you" and *either* "I" or "am" appeared.
+    will find places where "you" and *either* "I" or "am" appeared.
 
     In order to search for the literal words 'AND', 'OR', or 'NOT',
     you must encapsulate them in quotes::

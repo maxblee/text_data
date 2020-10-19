@@ -27,34 +27,27 @@ type PositionResult = (usize, usize, usize, Option<usize>, Option<usize>);
 /// This allows you to quickly search for phrases within a list of documents
 /// and to compute basic calculations from the documents.
 #[pyclass]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PositionalIndex {
     /// Maps terms to their postings. Inspired from the
     /// [inverted_index](https://github.com/tikue/inverted_index/blob/master/src/index.rs) crate.
     index: BTreeMap<String, TermIndex>,
-    /// The total number of *distinct* words in the document set
-    #[pyo3(get)]
-    vocab_size: usize,
     /// The total number of word occurrences in the document set
     #[pyo3(get)]
     num_words: usize,
-    /// The total number of documents
-    #[pyo3(get)]
-    num_documents: usize,
     /// A vector marking the length of documents
-    doc_lengths: Vec<usize>,
-    max_idx: usize,
+    doc_lengths: BTreeMap<usize, usize>,
+    /// The index after the last index in the document set
+    next_idx: usize,
 }
 
 impl Default for PositionalIndex {
     fn default() -> Self {
         PositionalIndex {
             index: BTreeMap::new(),
-            vocab_size: 0,
             num_words: 0,
-            num_documents: 0,
-            doc_lengths: Vec::new(),
-            max_idx: 0,
+            doc_lengths: BTreeMap::new(),
+            next_idx: 0,
         }
     }
 }
@@ -110,8 +103,8 @@ impl PositionalIndex {
             }
         }
         // need starting length so updates add documents with new ids
-        let starting_id = self.max_idx;
-        let mut doc_lengths = Vec::new();
+        let starting_id = self.next_idx;
+        let mut doc_lengths = BTreeMap::new();
 
         for (doc_index, words) in documents.iter().enumerate() {
             let document_id = doc_index + starting_id;
@@ -160,14 +153,272 @@ impl PositionalIndex {
                     .update(document_id, word_position);
                 self.num_words += 1;
             }
-            doc_lengths.push(words.len());
+            doc_lengths.insert(document_id, words.len());
         }
-        self.vocab_size = self.index.len();
-        self.num_documents += documents.len();
-        self.max_idx += documents.len();
-        self.doc_lengths.append(&mut doc_lengths);
+        self.next_idx += documents.len();
+        self.doc_lengths.extend(doc_lengths);
         Ok(())
     }
+
+    // Filtering
+    //
+    // All of these functions are designed to create new indexes
+    // based on previous indexes
+
+    /// This copies the index
+    fn copy(&self) -> PositionalIndex {
+        self.clone()
+    }
+
+    /// Changes the index, having it iterate in order from the optional starting position (defaults at 0)
+    fn reset_index(&mut self, start_index: Option<usize>) {
+        let first_idx = start_index.unwrap_or(0);
+        let mut base_index = PositionalIndex::default();
+        // create a mapping from old indexes to new ones, while updating values
+        let old_idx_to_new_idx: BTreeMap<usize, usize> = self
+            .doc_lengths
+            .iter()
+            .enumerate()
+            .map(|(count, res)| {
+                let (doc_id, doc_len) = res;
+                base_index.doc_lengths.insert(count + first_idx, *doc_len);
+                (*doc_id, count + first_idx)
+            })
+            .collect();
+        base_index.index.extend({
+            self.index
+                .par_iter()
+                .map(|(word, term_idx)| {
+                    let postings = term_idx
+                        .postings
+                        .iter()
+                        .map(|(doc_id, positions)| {
+                            (*old_idx_to_new_idx.get(doc_id).unwrap(), positions.to_vec())
+                        })
+                        .collect();
+                    (
+                        word.clone(),
+                        TermIndex {
+                            term_count: term_idx.term_count,
+                            postings,
+                        },
+                    )
+                })
+                .collect::<BTreeMap<String, TermIndex>>()
+        });
+        base_index.next_idx = base_index.__len__();
+        base_index.num_words = self.num_words;
+        *self = base_index;
+    }
+
+    /// Converts a PositionalIndex with 1+ documents into a PositionalIndex with a single document
+    fn flatten(&self) -> PositionalIndex {
+        if self.__len__() == 0 {
+            return self.clone();
+        }
+        let num_words = self.num_words;
+        let mut doc_lengths = BTreeMap::new();
+        doc_lengths.insert(0, self.doc_lengths.values().sum());
+        let next_idx = 1;
+        let index = self
+            .index
+            .par_iter()
+            .map(|(word, term_idx)| {
+                let mut postings = BTreeMap::new();
+                // flatten the vector of positions, and remove positional info from it
+                let term_items = term_idx
+                    .postings
+                    .values()
+                    .map(|positions| positions.iter().map(|v| v.remove_positions()))
+                    .flatten()
+                    .collect();
+                postings.insert(0, term_items);
+                (
+                    word.clone(),
+                    TermIndex {
+                        term_count: term_idx.term_count,
+                        postings,
+                    },
+                )
+            })
+            .collect();
+        PositionalIndex {
+            index,
+            num_words,
+            doc_lengths,
+            next_idx,
+        }
+    }
+
+    /// Concatenates two indexes.
+    ///
+    /// If you set ignore_index=True, it will clear the first index
+    /// (so the indexes will run from 0..combined length). Otherwise, you
+    /// can get an error if the indexes are overlapping.
+    #[staticmethod]
+    fn concat(
+        left_index: &PositionalIndex,
+        right_index: &PositionalIndex,
+        ignore_index: bool,
+    ) -> PyResult<PositionalIndex> {
+        if ignore_index {
+            let mut res_index = left_index.clone();
+            res_index.reset_index(None);
+            let mut to_append = right_index.clone();
+            to_append.reset_index(Some(left_index.__len__()));
+            to_append.index.iter().for_each(|(word, term_idx)| {
+                res_index
+                    .index
+                    .entry(word.clone())
+                    .and_modify(|e| e.append(term_idx))
+                    .or_insert_with(|| term_idx.clone());
+            });
+            res_index.num_words += to_append.num_words;
+            res_index.doc_lengths.extend(to_append.doc_lengths);
+            res_index.next_idx = res_index.__len__();
+            Ok(res_index)
+        } else {
+            let left_idxs: HashSet<usize> = left_index.doc_lengths.keys().cloned().collect();
+            let right_idxs: HashSet<usize> = right_index.doc_lengths.keys().cloned().collect();
+            if left_idxs
+                .intersection(&right_idxs)
+                .cloned()
+                .collect::<HashSet<usize>>()
+                .is_empty()
+                .not()
+            {
+                return Err(PyValueError::new_err("The two indexes for this function intersected. Hint: Try setting ignore_index=True.".to_string()));
+            }
+            let mut index_setup = left_index.clone();
+            right_index.index.iter().for_each(|(word, term_idx)| {
+                index_setup
+                    .index
+                    .entry(word.clone())
+                    .and_modify(|e| e.append(term_idx))
+                    .or_insert_with(|| term_idx.clone());
+            });
+            index_setup.index.extend(right_index.index.clone());
+            index_setup
+                .doc_lengths
+                .extend(right_index.doc_lengths.clone());
+            index_setup.num_words += right_index.num_words;
+            index_setup.next_idx = right_index.next_idx;
+            Ok(index_setup)
+        }
+    }
+
+    /// This creates a new index, just from the values at the old index
+    fn slice(&self, indexes: HashSet<usize>) -> PyResult<PositionalIndex> {
+        let doc_lengths = indexes
+            .iter()
+            .map(|doc_id| {
+                let doc_length = self.doc_lengths.get(doc_id).ok_or_else(|| {
+                    PyValueError::new_err(format!(
+                        "Invalid ID. Document with ID {} does not exist",
+                        doc_id
+                    ))
+                })?;
+                Ok((*doc_id, *doc_length))
+            })
+            .collect::<PyResult<BTreeMap<usize, usize>>>()?;
+        let num_words = doc_lengths.values().sum();
+        let next_idx = doc_lengths.keys().max().unwrap_or(&0) + 1;
+        let index = self
+            .index
+            .par_iter()
+            .map(|(word, term_idx)| {
+                let mut term_count = 0;
+                let postings = term_idx
+                    .postings
+                    .iter()
+                    .filter(|(doc_id, _positions)| doc_lengths.contains_key(doc_id))
+                    .map(|(doc_id, positions)| {
+                        term_count += positions.len();
+                        (*doc_id, positions.clone())
+                    })
+                    .collect();
+                (
+                    word.clone(),
+                    TermIndex {
+                        term_count,
+                        postings,
+                    },
+                )
+            })
+            .filter(|(_word, term_idx)| term_idx.term_count > 0)
+            .collect();
+        Ok(PositionalIndex {
+            index,
+            num_words,
+            doc_lengths,
+            next_idx,
+        })
+    }
+
+    fn split_off(&mut self, indexes: HashSet<usize>) -> PyResult<PositionalIndex> {
+        // this is inefficient, but i'm lazy and don't want to refactor
+        let result_index = self.slice(indexes.clone())?;
+        self.doc_lengths = self
+            .doc_lengths
+            .iter()
+            .filter(|(doc_id, _num_words)| indexes.contains(doc_id).not())
+            .map(|(doc_id, num_words)| (*doc_id, *num_words))
+            .collect();
+        self.next_idx = self.doc_lengths.keys().max().unwrap_or(&0) + 1;
+        self.num_words = self.doc_lengths.values().sum();
+        self.index = self
+            .index
+            .par_iter()
+            .map(|(word, term_idx)| {
+                let postings: BTreeMap<usize, Vec<Position>> = term_idx
+                    .postings
+                    .iter()
+                    .filter(|(doc_id, _positions)| indexes.contains(doc_id).not())
+                    .map(|(doc_id, positions)| (*doc_id, positions.clone()))
+                    .collect();
+                let term_count = postings.values().map(|v| v.len()).sum();
+                (
+                    word.clone(),
+                    TermIndex {
+                        postings,
+                        term_count,
+                    },
+                )
+            })
+            .filter(|(_word, term_idx)| term_idx.term_count > 0)
+            .collect();
+        Ok(result_index)
+    }
+
+    /// This creates a new index that does not include the words
+    /// of the original index (and that also doesn't include positional
+    /// information)
+    fn skip_words(&self, words: HashSet<String>) -> PositionalIndex {
+        let next_idx = self.next_idx;
+        let mut index = BTreeMap::new();
+        let mut num_words = 0;
+        let mut doc_lengths: BTreeMap<usize, usize> =
+            self.doc_lengths.keys().map(|v| (*v, 0)).collect();
+        for (word, term_idx) in &self.index {
+            if words.contains(word).not() {
+                let new_term_idx = term_idx.copy_without_positions();
+                for (doc_id, posting_list) in new_term_idx.postings {
+                    *doc_lengths.entry(doc_id).or_insert(0) += posting_list.len();
+                }
+                num_words += new_term_idx.term_count;
+                index.insert(word.clone(), term_idx.copy_without_positions());
+            }
+        }
+        PositionalIndex {
+            next_idx,
+            index,
+            num_words,
+            doc_lengths,
+        }
+    }
+
+    // Corpus Information
+    // These functions provide basic information about the corpus as a whole
 
     /// Gets all of the words in the corpus.
     fn vocabulary(&self) -> HashSet<String> {
@@ -177,6 +428,54 @@ impl PositionalIndex {
     /// Gets all of the words in the corpus and returns them in sorted (list) order
     fn vocabulary_list(&self) -> Vec<String> {
         self.index.keys().cloned().collect()
+    }
+
+    /// Gets the number of unique words
+    fn vocab_size(&self) -> usize {
+        self.index.len()
+    }
+
+    // Point estimates
+    // These functions provide point estimates for the index
+    //
+    // Word Statistics
+    // These provide statistics about specific words
+    // without requiring information about the document
+
+    /// Count the number of documents a word has appeared in
+    fn document_count(&self, word: &str) -> usize {
+        self.index.get(word).map(|v| v.postings.len()).unwrap_or(0)
+    }
+
+    /// Report the document frequency (the percentage of documents that has the word)
+    fn document_frequency(&self, word: &str) -> f64 {
+        self.document_count(word) as f64 / self.doc_lengths.len() as f64
+    }
+
+    /// Get the inverse document frequency (the number of documents / the document count) for a word in a document
+    fn idf(&self, word: &str) -> f64 {
+        self.__len__() as f64 / self.document_count(word) as f64
+    }
+
+    /// Get a list of the documents that contain a word
+    fn docs_with_word(&self, word: &str) -> Vec<usize> {
+        self.index
+            .get(word)
+            .map(|v| v.postings.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Get a mapping of the documents containing a word and its counts
+    ///
+    /// For a given word returns {doc_id: number of counts}
+    fn word_counter(&self, word: &str) -> HashMap<usize, usize> {
+        self.index
+            .get(word)
+            .unwrap_or(&TermIndex::default())
+            .postings
+            .par_iter()
+            .map(|(doc_id, posting_dict)| (*doc_id, posting_dict.len()))
+            .collect()
     }
 
     /// Show the most commonly appearing words
@@ -192,7 +491,7 @@ impl PositionalIndex {
         word_counts
             .into_iter()
             // return the first n | vocab results
-            .take(num_words.unwrap_or(self.vocab_size))
+            .take(num_words.unwrap_or_else(|| self.index.len()))
             .collect()
     }
 
@@ -228,41 +527,9 @@ impl PositionalIndex {
         }
     }
 
-    /// Count the number of documents a word has appeared in
-    fn document_count(&self, word: &str) -> usize {
-        self.index.get(word).map(|v| v.postings.len()).unwrap_or(0)
-    }
-
-    /// Report the document frequency (the percentage of documents that has the word)
-    fn document_frequency(&self, word: &str) -> f64 {
-        self.document_count(word) as f64 / self.num_documents as f64
-    }
-
-    /// Get the inverse document frequency (the number of documents / the document count) for a word in a document
-    fn idf(&self, word: &str) -> f64 {
-        self.__len__() as f64 / self.document_count(word) as f64
-    }
-
-    /// Get a list of the documents that contain a word
-    fn docs_with_word(&self, word: &str) -> Vec<usize> {
-        self.index
-            .get(word)
-            .map(|v| v.postings.keys().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    /// Get a mapping of the documents containing a word and its counts
-    ///
-    /// For a given word returns {doc_id: number of counts}
-    fn word_counter(&self, word: &str) -> HashMap<usize, usize> {
-        self.index
-            .get(word)
-            .unwrap_or(&TermIndex::default())
-            .postings
-            .par_iter()
-            .map(|(doc_id, posting_dict)| (*doc_id, posting_dict.len()))
-            .collect()
-    }
+    // Word-document point estimates
+    //
+    // These provide statistics about words within a document
 
     /// Report the total number of times a word appears in a document
     fn term_count(&self, word: &str, document: usize) -> PyResult<usize> {
@@ -283,8 +550,13 @@ impl PositionalIndex {
     /// Get the Raw term frequency (term count / document length) for a word in a document
     fn term_frequency(&self, word: &str, document: usize) -> PyResult<f64> {
         let term_count = self.term_count(word, document)?;
-        Ok(term_count as f64 / *self.doc_lengths.get(document).unwrap() as f64)
+        Ok(term_count as f64 / *self.doc_lengths.get(&document).unwrap() as f64)
     }
+
+    // Vector computations
+    //
+    // These functions return term-document vectors where each
+    // item in the vector refers to a word in the vocabulary
 
     /// Get a numpy array of all the document counts in the corpus
     fn doc_count_vector(&self) -> Py<PyArray1<f64>> {
@@ -316,6 +588,8 @@ impl PositionalIndex {
         self.term_matrix(|word, _term_idx| self.odds_word(word, sublinear))
     }
 
+    // Matrix statistics
+
     /// Get a term-document matrix as a numpy array, where the values in the matrix are counts
     fn count_matrix(&self) -> Py<PyArray2<f64>> {
         self.tf_matrix(None, None)
@@ -337,7 +611,7 @@ impl PositionalIndex {
                 term_count
             };
             if l1_norm {
-                adjusted_count / *self.doc_lengths.get(doc_id).unwrap() as f64
+                adjusted_count / *self.doc_lengths.get(&doc_id).unwrap() as f64
             } else {
                 adjusted_count
             }
@@ -350,6 +624,10 @@ impl PositionalIndex {
             term_idx.postings.contains_key(&doc_id) as u8 as f64
         })
     }
+
+    // Searching
+    //
+    // These are all designed to facilitate searches for the corpus
 
     /// Searches for all of the documents where a given set of words appears
     ///
@@ -386,7 +664,7 @@ impl PositionalIndex {
 #[pyproto]
 impl PySequenceProtocol for PositionalIndex {
     fn __len__(&self) -> usize {
-        self.num_documents
+        self.doc_lengths.len()
     }
 
     fn __contains__(&self, item: &str) -> bool {
@@ -406,7 +684,7 @@ impl PositionalIndex {
                 .par_iter()
                 .map(|(word, term_idx)| {
                     // set a zeroed document
-                    let mut zero_vec = vec![0.; self.num_documents];
+                    let mut zero_vec = vec![0.; self.__len__()];
                     term_idx.postings.keys().for_each(|doc_id| {
                         let doc_val = func(word, term_idx, *doc_id);
                         zero_vec[*doc_id] = doc_val;
@@ -614,7 +892,7 @@ impl PositionalIndex {
 }
 
 /// Holds information about all of the postings for a single word (across documents)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TermIndex {
     /// the frequency of the term across the documents
     pub term_count: usize,
@@ -640,13 +918,41 @@ impl TermIndex {
             .or_insert_with(Vec::new)
             .push(position);
     }
+
+    /// This creates a TermIndex that is identical minus positional
+    /// information
+    pub fn copy_without_positions(&self) -> TermIndex {
+        let term_count = self.term_count;
+        let mut postings = BTreeMap::new();
+        for (doc_id, positions) in &self.postings {
+            let cloned_postings = positions.iter().map(|v| v.remove_positions()).collect();
+            postings.insert(*doc_id, cloned_postings);
+        }
+        TermIndex {
+            term_count,
+            postings,
+        }
+    }
+
+    /// This updates a `TermIndex` with the contents of another
+    pub fn append(&mut self, other: &TermIndex) {
+        self.term_count += other.term_count;
+        other.postings.iter().for_each(|(doc_id, postings)| {
+            self.postings
+                .entry(*doc_id)
+                .and_modify(|e| {
+                    e.extend(postings.clone());
+                })
+                .or_insert_with(|| postings.clone());
+        })
+    }
 }
 
 /// Describes an individual position for a word within a document.usize
 ///
 /// Functionally, this just stores information about the word's position within
 /// a list of items and its start and end index within the original document
-#[derive(Debug, Eq)]
+#[derive(Debug, Eq, Clone, Copy)]
 struct Position {
     /// the index within the list of words
     pub idx: usize,
@@ -663,6 +969,16 @@ impl Position {
             idx,
             start_idx,
             end_idx,
+        }
+    }
+
+    /// This creates an identical position that does not contain
+    /// positional information
+    pub fn remove_positions(&self) -> Position {
+        Position {
+            idx: self.idx,
+            start_idx: None,
+            end_idx: None,
         }
     }
 }
@@ -795,8 +1111,8 @@ mod tests {
         .collect();
         let index = PositionalIndex::new(Some(documents), None).unwrap();
         assert_eq!(index.num_words, 8);
-        assert_eq!(index.num_documents, 2);
-        assert_eq!(index.vocab_size, 6);
+        assert_eq!(index.__len__(), 2);
+        assert_eq!(index.index.len(), 6);
         let first_posting = Position {
             idx: 4,
             start_idx: None,
@@ -908,6 +1224,207 @@ mod tests {
         ];
         let overlap_index_2 = PositionalIndex::new(Some(documents), Some(overlapping_2));
         assert!(overlap_index_2.is_err());
+    }
+
+    #[test]
+    fn skipping_words_passes() {
+        // makes sure that if you create an index that skips the words
+        // the words are not in the new index
+        let docs = vec![
+            vec!["example".to_string(), "document".to_string()],
+            vec!["document".to_string()],
+        ];
+        let basic_index = PositionalIndex::new(Some(docs.clone()), None).unwrap();
+        let missing_words: HashSet<String> = vec!["document".to_string()].iter().cloned().collect();
+        let skip_index = basic_index.skip_words(missing_words.clone());
+        assert!(basic_index.__contains__("document"));
+        assert!(skip_index.__contains__("document").not());
+        assert_eq!(basic_index.__len__(), 2);
+        // the second index should still have the same number of documents
+        assert_eq!(skip_index.__len__(), 2);
+        assert_eq!(basic_index.num_words, 3);
+        assert_eq!(skip_index.num_words, 1);
+        let expected_basic_lengths: BTreeMap<usize, usize> =
+            vec![(0, 2), (1, 1)].iter().cloned().collect();
+        assert_eq!(basic_index.doc_lengths, expected_basic_lengths);
+        let expected_basic_lengths: BTreeMap<usize, usize> =
+            vec![(0, 1), (1, 0)].iter().cloned().collect();
+        assert_eq!(skip_index.doc_lengths, expected_basic_lengths);
+        // skipping words should remove positional information
+        let positions = vec![vec![(0, 2), (3, 5)], vec![(0, 5)]];
+        let basic_positional = PositionalIndex::new(Some(docs), Some(positions)).unwrap();
+        let ex_position = basic_positional
+            .index
+            .get("example")
+            .unwrap()
+            .postings
+            .get(&0)
+            .unwrap()
+            .first()
+            .unwrap();
+        assert!(ex_position.start_idx.is_some());
+        assert!(ex_position.end_idx.is_some());
+        let skip_position = basic_positional.skip_words(missing_words);
+        let example_skip = skip_position
+            .index
+            .get("example")
+            .unwrap()
+            .postings
+            .get(&0)
+            .unwrap()
+            .first()
+            .unwrap();
+        assert!(example_skip.end_idx.is_none());
+        assert!(example_skip.start_idx.is_none());
+    }
+
+    #[test]
+    fn flattening_indexes_passes() {
+        // flattening an index when there are no documents should return the same thing
+        let blank_index = PositionalIndex::default();
+        let flattened_blank = blank_index.flatten();
+        assert_eq!(flattened_blank.__len__(), 0);
+        assert_eq!(flattened_blank.num_words, 0);
+        assert_eq!(flattened_blank.doc_lengths, BTreeMap::new());
+        assert_eq!(flattened_blank.next_idx, 0);
+        let new_docs = vec![
+            vec!["example".to_string(), "document".to_string()],
+            vec!["another".to_string(), "document".to_string()],
+        ];
+        let positions = vec![vec![(0, 1), (2, 5)], vec![(20, 29), (30, 34)]];
+        let flattened_idx = PositionalIndex::new(Some(new_docs.clone()), Some(positions))
+            .unwrap()
+            .flatten();
+        assert_eq!(flattened_idx.__len__(), 1);
+        assert_eq!(flattened_idx.num_words, 4);
+        assert_eq!(
+            flattened_idx.doc_lengths,
+            vec![(0, 4)].iter().cloned().collect()
+        );
+        assert_eq!(flattened_idx.next_idx, 1);
+        for pos in flattened_idx
+            .index
+            .get("document")
+            .unwrap()
+            .postings
+            .get(&0)
+            .unwrap()
+        {
+            assert!(pos.start_idx.is_none());
+            assert!(pos.end_idx.is_none());
+        }
+    }
+
+    #[test]
+    fn concatenate_full() {
+        // if you don't set ignore_index to concat, it can throw an error
+        let docs1 = vec![
+            vec!["example".to_string(), "document".to_string()],
+            vec!["another".to_string(), "example".to_string()],
+        ];
+        let docs2 = vec![vec![
+            "a".to_string(),
+            "new".to_string(),
+            "document".to_string(),
+            "set".to_string(),
+        ]];
+        let index1 = PositionalIndex::new(Some(docs1), None).unwrap();
+        let index2 = PositionalIndex::new(Some(docs2), None).unwrap();
+        assert!(PositionalIndex::concat(&index1, &index2, false).is_err());
+        assert!(PositionalIndex::concat(&index1, &index2, true).is_ok());
+        let safe_concat = PositionalIndex::concat(&index1, &index2, true).unwrap();
+        assert_eq!(
+            safe_concat.clone().most_common(None),
+            vec![
+                ("document".to_string(), 2),
+                ("example".to_string(), 2),
+                ("a".to_string(), 1),
+                ("another".to_string(), 1),
+                ("new".to_string(), 1),
+                ("set".to_string(), 1)
+            ]
+        );
+        assert_eq!(safe_concat.clone().vocab_size(), 6);
+        let document_data = safe_concat.index.get("document");
+        assert!(document_data.is_some());
+        assert_eq!(document_data.unwrap().term_count, 2);
+        assert_eq!(document_data.unwrap().postings.len(), 2);
+        assert_eq!(
+            *document_data.unwrap().postings.get(&0).unwrap(),
+            vec![Position::new(1, None, None)]
+        );
+        assert!(document_data.unwrap().postings.get(&1).is_none());
+        assert_eq!(
+            *document_data.unwrap().postings.get(&2).unwrap(),
+            vec![Position::new(2, None, None)]
+        );
+    }
+
+    #[test]
+    fn test_slice_split_off() {
+        // this tests the two functions designed to split off indices work
+        let docs = vec![
+            vec!["just".to_string(), "going".to_string()],
+            vec!["split".to_string()],
+            vec!["parts".to_string()],
+            vec!["of".to_string(), "this".to_string(), "off".to_string()],
+        ];
+        let mut index = PositionalIndex::new(Some(docs), None).unwrap();
+        assert!(index.slice([0, 10].iter().cloned().collect()).is_err());
+        let sliced = index.slice([0, 2].iter().cloned().collect()).unwrap();
+        // make sure this hasn't removed items yet
+        assert_eq!(index.__len__(), 4);
+        assert_eq!(sliced.__len__(), 2);
+        assert_eq!(sliced.num_words, 3);
+        assert_eq!(
+            sliced.doc_lengths,
+            [(0, 2), (2, 1)].iter().cloned().collect()
+        );
+        assert_eq!(sliced.next_idx, 3);
+        assert_eq!(
+            sliced.most_common(None),
+            vec![
+                ("going".to_string(), 1),
+                ("just".to_string(), 1),
+                ("parts".to_string(), 1)
+            ]
+        );
+        assert!(index.split_off([0, 10].iter().cloned().collect()).is_err());
+        assert_eq!(index.__len__(), 4);
+        index.split_off([0, 2].iter().cloned().collect()).unwrap();
+        assert_eq!(index.__len__(), 2);
+        assert_eq!(index.num_words, 4);
+        assert_eq!(
+            index.doc_lengths,
+            [(1, 1), (3, 3)].iter().cloned().collect()
+        );
+        assert_eq!(index.next_idx, 4);
+    }
+
+    #[test]
+    fn test_reindex() {
+        let docs = vec![
+            vec!["example".to_string()],
+            vec!["document".to_string()],
+            vec!["another".to_string()],
+            vec!["document".to_string()],
+        ];
+        let index = PositionalIndex::new(Some(docs), None).unwrap();
+        let mut sliced = index.slice([1, 3].iter().cloned().collect()).unwrap();
+        assert_eq!(
+            sliced.doc_lengths.keys().cloned().collect::<Vec<usize>>(),
+            vec![1, 3]
+        );
+        sliced.reset_index(None);
+        assert_eq!(
+            sliced.doc_lengths.keys().cloned().collect::<Vec<usize>>(),
+            vec![0, 1]
+        );
+        sliced.reset_index(Some(10));
+        assert_eq!(
+            sliced.doc_lengths.keys().cloned().collect::<Vec<usize>>(),
+            vec![10, 11]
+        );
     }
 
     #[test]
@@ -1154,14 +1671,6 @@ mod tests {
     }
 
     proptest! {
-        #[test]
-        fn len_returns_num_documents(documents in generate_fake_documents()) {
-            // makes sure that getting the len(number of documents returns the number of documents)
-            let num_docs = documents.len();
-            let index = PositionalIndex::new(Some(documents), None).unwrap();
-            assert_eq!(index.__len__(), num_docs);
-            assert_eq!(index.num_documents, num_docs);
-        }
 
         #[test]
         fn test_word_count_existing(documents in generate_fake_documents()) {
@@ -1187,7 +1696,27 @@ mod tests {
             // makes sure `PositionalIndex.vocab_size` works
             let counter = build_counter(&documents);
             let index = PositionalIndex::new(Some(documents), None).unwrap();
-            assert_eq!(index.vocab_size, counter.keys().len());
+            assert_eq!(index.index.len(), counter.keys().len());
+        }
+
+        #[test]
+        fn concatenating_words(
+            documents_1 in generate_fake_documents(),
+            documents_2 in generate_fake_documents()
+        ) {
+            let left_idx = PositionalIndex::new(Some(documents_1), None).unwrap();
+            let right_idx = PositionalIndex::new(Some(documents_2), None).unwrap();
+            let concat_index = PositionalIndex::concat(
+                &left_idx,
+                &right_idx,
+                true
+            ).unwrap();
+            assert_eq!(left_idx.__len__() + right_idx.__len__(), concat_index.__len__());
+            assert_eq!(
+                left_idx.vocabulary().union(&right_idx.vocabulary()).cloned().collect::<HashSet<String>>(),
+                concat_index.vocabulary()
+            );
+            assert_eq!(concat_index.next_idx, concat_index.__len__());
         }
     }
 }
