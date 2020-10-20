@@ -30,6 +30,7 @@ def requires_display_extra(func: Callable[..., Any]) -> Callable[..., Any]:
 
     return wrapper
 
+
 def _escape_html(raw_text: str) -> str:
     """Escapes HTML to get rid of Jupyter rendering problems."""
     # the first part of this is built on the idea that if the content
@@ -37,7 +38,7 @@ def _escape_html(raw_text: str) -> str:
     # the extra symbols are because of weird pretty printing behavior from
     # jupyter (see https://stackoverflow.com/questions/16089089/escaping-dollar-sign-in-ipython-notebook)
     return (
-            html.escape(raw_text)
-            # https://blogueun.wordpress.com/2014/01/04/escaping-in-mathjax/
-            .replace("$", "<span class='tex2jax_ignore'>$</span>")
+        html.escape(raw_text)
+        # https://blogueun.wordpress.com/2014/01/04/escaping-in-mathjax/
+        .replace("$", "<span class='tex2jax_ignore'>$</span>")
     )

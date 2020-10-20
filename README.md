@@ -1,6 +1,18 @@
 # Text Data
 
-A Python package for exploring text data for analysis.
+This is a library to designed to help people explore and analyze
+text data.
+
+What does it do to achieve these goals? It:
+
+- Uses an [inverted positional index](https://nlp.stanford.edu/IR-book/html/htmledition/positional-indexes-1.html) so you can efficiently
+search through document sets.
+- Has a minimal boolean querying and ranking system so you can search
+for words or arbitrarily long phrases and have the documents that best
+match your query appear at the top.
+- Offers an extensive set of statistical lookups so you can get
+the counts, frequencies, and even get a term-document matrix of
+TF-IDF scores across a set of documents.
 
 ## Table of Contents
 

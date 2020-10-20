@@ -5,6 +5,7 @@ sets of documents so you can easy compute statistics on them.
 """
 from text_data import WordIndex
 
+
 def concatenate(*indexes: WordIndex, ignore_index: bool = True) -> WordIndex:
     """Concatenates an arbitrary number of :class:`text_data.index.WordIndex` objects.
 
@@ -17,9 +18,9 @@ def concatenate(*indexes: WordIndex, ignore_index: bool = True) -> WordIndex:
             document indexes.
 
     Example:
-        >>> corpus_1 = Corpus(["example", "document"])
-        >>> corpus_2 = Corpus(["second", "document"])
-        >>> corpus_3 = Corpus(["third", "document"])
+        >>> corpus_1 = WordIndex([["example"], ["document"]])
+        >>> corpus_2 = WordIndex([["second"], ["document"]])
+        >>> corpus_3 = WordIndex([["third"], ["document"]])
         >>> concatenate().most_common()
         []
         >>> concatenate(corpus_1).most_common()
@@ -46,8 +47,8 @@ def flat_concat(*indexes: WordIndex) -> WordIndex:
     This does not preserve any information about :class:`text_data.index.Corpus` objects.
 
     Example:
-        >>> corpus_1 = Corpus(["example", "document"])
-        >>> corpus_2 = Corpus(["another", "set", "of", "documents"])
+        >>> corpus_1 = WordIndex([["example"], ["document"]])
+        >>> corpus_2 = WordIndex([["another"], ["set"], ["of"], ["documents"]])
         >>> len(corpus_1)
         2
         >>> len(corpus_2)

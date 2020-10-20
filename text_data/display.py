@@ -9,6 +9,7 @@ This enables you to take the outputs from any functions inside of
 from typing import Any, List, Optional
 
 import numpy as np
+
 # this allows for global imports. ImportError will only be raised from inside
 # a function decorated with `requires_display_extra`
 try:
@@ -18,6 +19,7 @@ except Exception:
     pass
 
 from text_data import core, WordIndex
+
 
 @core.requires_display_extra
 def render_bar_chart(
@@ -51,6 +53,7 @@ def render_bar_chart(
         )
     )
     return base_chart
+
 
 @core.requires_display_extra
 def render_multi_bar_chart(
@@ -111,7 +114,7 @@ def heatmap(
     right_indexes: Optional[List[Any]] = None,
     left_name: str = "Left",
     right_name: str = "Right",
-    metric_name: str = "Similarity"
+    metric_name: str = "Similarity",
 ):
     """Displays a heatmap displaying scores across a 2-dimensional matrix.
 
@@ -181,12 +184,13 @@ def heatmap(
         )
     )
 
+
 @core.requires_display_extra
 def frequency_map(
     index: WordIndex,
     word_vector: np.array,
     x_label: str = "Word Frequency",
-    y_label: str = "Score"
+    y_label: str = "Score",
 ):
     """A scatterplot scores over a corpus to their underlying frequencies.
 
@@ -215,24 +219,29 @@ def frequency_map(
     """
     if word_vector.shape != (index.vocab_size,):
         raise ValueError("You must enter a 1-dimensional array")
-    df_rendering = pd.DataFrame({
-        "Word": index.vocab_list,
-        x_label: index.word_freq_vector(),
-        y_label: word_vector
-    })
-    return alt.Chart(df_rendering).mark_point().encode(
-        x=alt.X(f"{x_label}:Q", scale=alt.Scale(type="log", base=10)),
-        y=f"{y_label}:Q",
-        tooltip=list(df_rendering.columns)
+    df_rendering = pd.DataFrame(
+        {
+            "Word": index.vocab_list,
+            x_label: index.word_freq_vector(),
+            y_label: word_vector,
+        }
+    )
+    return (
+        alt.Chart(df_rendering)
+        .mark_point()
+        .encode(
+            x=alt.X(f"{x_label}:Q", scale=alt.Scale(type="log", base=10)),
+            y=f"{y_label}:Q",
+            tooltip=list(df_rendering.columns),
+        )
     )
 
+
 def display_score_tables(
-    words: np.array,
-    scores: np.array,
-    table_names: Optional[List[str]] = None
+    words: np.array, scores: np.array, table_names: Optional[List[str]] = None
 ):
-    """Renders two score tables. 
-    
+    """Renders two score tables.
+
     This is the 2-dimensional equivalent of
     :func:`~text_data.index.display_score_table` for details.
 
@@ -251,7 +260,9 @@ def display_score_tables(
     if words.shape != scores.shape:
         raise ValueError("Both matrix arguments must be of the same shape.")
     _rows, cols = words.shape
-    table_names = list(range(len(cols))) if table_names is None else table_names
+    table_names = (
+        list(map(str, range(len(cols)))) if table_names is None else table_names
+    )
     if len(table_names) != cols:
         raise ValueError("There must be as many table names as there are columns")
     html = ""
@@ -259,13 +270,12 @@ def display_score_tables(
         html += display_score_table(words, scores, table_name)
     return html
 
+
 def display_score_table(
-    words: np.array,
-    scores: np.array,
-    table_name: str = "Top Scores"
+    words: np.array, scores: np.array, table_name: str = "Top Scores"
 ) -> str:
     """Returns the top (or bottom scores) as a table.
-    
+
     It requires a 1-dimensional numpy array of the scores and the words,
     much as you would receive from
     :meth:`text_data.index.WordIndex.get_top_words`. For a 2-dimensional
@@ -275,7 +285,7 @@ def display_score_table(
         words: A 1-dimensional numpy array of words.
         scores: A 1-dimensional numpy array of corresponding scores.
         table_name: The name to give your table.
-    
+
     Raises:
         ValueError: If you did not use a 1-dimensional array, or if the
             two arrays don't have identical shapes.
