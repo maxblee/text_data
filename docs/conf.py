@@ -20,6 +20,8 @@
 import os
 import sys
 
+import sphinx_bootstrap_theme
+
 sys.path.insert(0, os.path.abspath(".."))
 
 import text_data
@@ -37,13 +39,14 @@ extensions = [
     # https://github.com/agronholm/sphinx-autodoc-typehints/issues/15
     "sphinx.ext.napoleon",
     "sphinx.ext.autodoc",
+    "sphinx.ext.doctest",
     "sphinx_autodoc_typehints",
     "sphinx.ext.viewcode",
+    "sphinxcontrib.katex",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
-
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 #
@@ -91,13 +94,18 @@ todo_include_todos = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "alabaster"
+html_theme = "bootstrap"
+html_theme_path = sphinx_bootstrap_theme.get_html_theme_path()
 
 # Theme options are theme-specific and customize the look and feel of a
 # theme further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+html_theme_options = {
+    "navbar_title": "Text Data",
+    "navbar_site_name": "Max Lee Documentation Site",
+    "bootswatch_theme": "readable",
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

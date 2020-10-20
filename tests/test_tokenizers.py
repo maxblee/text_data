@@ -45,11 +45,8 @@ def test_empty_regex_match(input, regex, inverse):
 
 def test_postprocessing():
     """Tests postprocessing functions in `tokenize.postprocess_positions`."""
-    tokenized_text = tokenize.tokenize_regex_positions(r"\w+", "Ex doc")
-    assert tokenize.postprocess_positions([str.lower], tokenized_text) == (
-        ["ex", "doc"],
-        [(0, 2), (3, 6)],
-    )
-    assert tokenize.postprocess_positions(
-        [lambda x: x.lower() if x != "doc" else None], tokenized_text
-    ) == (["ex"], [(0, 2)])
+    text = "Ex doc"
+    assert tokenize.default_tokenizer(text) == (["ex", "doc"], [(0, 2), (3, 6)])
+    assert tokenize.corpus_tokenizer(
+        r"\w+", [lambda x: x.lower() if x != "doc" else None]
+    )(text) == (["ex"], [(0, 2)])

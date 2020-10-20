@@ -17,6 +17,6 @@ def test_require_decorator():
             requires_display_extra(fake_function)(1, y=2, z=3)
 
     try:
-        fake_function(1, y=2, z=3)
+        requires_display_extra(fake_function)(1, y=2, z=3)
     except ImportError:
         pytest.fail("This function should not raise an error")

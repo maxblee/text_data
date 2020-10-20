@@ -22,23 +22,22 @@ python = "^3.6"
 numpy = "*"
 ipython = "*"
 altair = {version = "^4.1.0", optional = true}
+pandas = { version = "*", optional = true }
 
 [tool.poetry.extras]
-display = ["altair"]
+display = ["altair", "pandas"]
 
 [tool.poetry.dev-dependencies]
-bump2version = "*"
 wheel = "*"
-watchdog = "*"
 black = "==20.8b1"
-nox = "*"
 Sphinx = "*"
 twine = "*"
 pytest-cov = "*"
 mypy = "*"
 sphinx-autodoc-typehints = "*"
-Faker = "*"
 maturin = "*"
 flake8 = "*"
 pytest-flake8 = "*"
 flake8-docstrings = "*"
+sphinx-bootstrap-theme = "^0.7.1"
+sphinxcontrib-katex = "^0.6.1"

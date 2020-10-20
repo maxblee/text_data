@@ -2,6 +2,7 @@
 import pytest
 
 from text_data.query import Query
+from text_data import tokenize
 
 
 @pytest.mark.parametrize(
@@ -19,10 +20,7 @@ from text_data.query import Query
 )
 def test_query_parsing_words(query, output):
     """Tests whether parsing queries produces the right sets of words."""
-    assert [
-        [q.words for q in subquery]
-        for subquery in Query(query, query_tokenizer=str.split).queries
-    ] == output
+    assert [[q.words for q in subquery] for subquery in Query(query).queries] == output
 
 
 @pytest.mark.parametrize(
@@ -37,8 +35,7 @@ def test_query_parsing_words(query, output):
 def test_query_modifier_type(query, output):
     """Tests whether the query modifiers work."""
     assert [
-        [q.modifier for q in subquery]
-        for subquery in Query(query, query_tokenizer=str.split).queries
+        [q.modifier for q in subquery] for subquery in Query(query).queries
     ] == output
 
 
@@ -52,17 +49,14 @@ def test_query_modifier_type(query, output):
 )
 def test_query_is_exact(query, output):
     """Tests the things that determine whether to do a phrase search or an inexact search."""
-    assert [
-        [q.exact for q in subquery]
-        for subquery in Query(query, query_tokenizer=str.split).queries
-    ] == output
+    assert [[q.exact for q in subquery] for subquery in Query(query).queries] == output
 
 
 @pytest.mark.parametrize("query", ["AND", " OR", "NOT ", " AND "])
 def test_starting_query_with_keyword_raises_error(query):
     """Starting queries with keywords should cause a ValueError."""
     with pytest.raises(ValueError):
-        Query(query, query_tokenizer=str.split)
+        Query(query)
 
 
 @pytest.mark.parametrize(
@@ -74,6 +68,11 @@ def test_starting_query_with_keyword_raises_error(query):
         ('"The cat" AND the dog', [[["the", "cat"]], [["the", "dog"]]]),
     ],
 )
-def test_default_tokenizer(query, output):
-    """The default query tokenizer should lowercase words without mishandling quotations."""
-    assert [[q.words for q in subquery] for subquery in Query(query).queries] == output
+def test_custom_tokenized(query, output):
+    """Using a lowercase tokenizer should lowercase words without mishandling quotations."""
+    assert [
+        [q.words for q in subquery]
+        for subquery in Query(
+            query, query_tokenizer=lambda x: tokenize.default_tokenizer(x)[0]
+        ).queries
+    ] == output
