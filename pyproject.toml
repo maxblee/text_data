@@ -22,6 +22,7 @@ python = "^3.6"
 numpy = "*"
 ipython = "*"
 altair = {version = "^4.1.0", optional = true}
+pandas = { version = "*", optional = true }
 
 [tool.poetry.extras]
 display = ["altair", "pandas"]

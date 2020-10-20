@@ -457,8 +457,8 @@ impl PositionalIndex {
         self.__len__() as f64 / self.document_count(word) as f64
     }
 
-    /// Get a list of the documents that contain a word
-    fn docs_with_word(&self, word: &str) -> Vec<usize> {
+    /// Get a set of the documents that contain a word
+    fn docs_with_word(&self, word: &str) -> HashSet<usize> {
         self.index
             .get(word)
             .map(|v| v.postings.keys().cloned().collect())
@@ -553,6 +553,32 @@ impl PositionalIndex {
         Ok(term_count as f64 / *self.doc_lengths.get(&document).unwrap() as f64)
     }
 
+    /// Figure out if a document contains a given word
+    fn doc_contains(&self, word: &str, document: usize) -> PyResult<bool> {
+        if self.doc_lengths.get(&document).is_none() {
+            Err(PyValueError::new_err(format!(
+                "The document {} is not in this index",
+                document
+            )))
+        } else {
+            Ok(self
+                .index
+                .get(word)
+                .map_or(false, |v| v.postings.contains_key(&document)))
+        }
+    }
+
+    /// Figure out the odds of a word appearing in a given document
+    fn odds_document(&self, word: &str, document: usize, sublinear: bool) -> PyResult<f64> {
+        let term_freq = self.term_frequency(word, document)?;
+        let odds = term_freq / (1. - term_freq);
+        if sublinear.not() {
+            Ok(odds)
+        } else {
+            Ok(odds.log2())
+        }
+    }
+
     // Vector computations
     //
     // These functions return term-document vectors where each
@@ -622,6 +648,13 @@ impl PositionalIndex {
     fn one_hot_matrix(&self) -> Py<PyArray2<f64>> {
         self.term_document_matrix(|_w, term_idx, doc_id| {
             term_idx.postings.contains_key(&doc_id) as u8 as f64
+        })
+    }
+
+    /// Get a matrix of all the document-level odds of words occurring
+    fn odds_matrix(&self, sublinear: bool, add_k: Option<f64>) -> Py<PyArray2<f64>> {
+        self.term_document_matrix(|word, _term_idx, doc_id| {
+            self.odds_document(word, doc_id, sublinear).unwrap() + add_k.unwrap_or_default()
         })
     }
 

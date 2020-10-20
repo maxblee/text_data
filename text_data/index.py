@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import collections
 import functools
-import html
 import itertools
 import sys
 from typing import (
@@ -87,13 +86,13 @@ class WordIndex:
       documents.
     - :meth:`~text_data.index.WordIndex.add_documents` allows you to add new
       documents into an existing :code:`WordIndex` object.
-      :meth:`~text_data.index.WordIndex.concat` similarly combines
+      :meth:`~text_data.index.WordIndex.concatenate` similarly combines
       :code:`WordIndex` objects into a single :code:`WordIndex`.
     - :meth:`~text_data.index.WordIndex.flatten` takes a :code:`WordIndex`
       and returns an identical index that only has one document.
-    - :meth:`~text_data.index.skip_words` takes a set of words
+    - :meth:`~text_data.index.WordIndex.skip_words` takes a set of words
       and returns a :code:`WordIndex` that does not have those words.
-    - :meth:`~text_data.index.reindex` changes the index of words.
+    - :meth:`~text_data.index.WordIndex.reset_index` changes the index of words.
 
     **Corpus Information**
 
@@ -108,73 +107,71 @@ class WordIndex:
     * :attr:`~text_data.index.WordIndex.num_words` gets the total number of words in the index.
 
 
-    **Point Estimates**
+    **Word Statistics**
 
     These allow you to gather statistics about single words
     or about word, document pairs. For instance, you can see
     how many words there are in the corpus, how many unique words there are,
-    or how often a particular word appears in a document:
+    or how often a particular word appears in a document.
 
-    * :meth:`~text_data.index.WordIndex.document_count` and
-      :meth:`~text_data.index.WordIndex.document_frequency`
-      provide the number of documents or the proportion of documents in which
-      a word appeared. :meth:`~text_data.index.WordIndex.idf` produces
-      the inverse (:math:`\frac{1}{df}`) of the document frequency.
-    * :meth:`~text_data.index.WordIndex.docs_with_word`
-      returns a list of documents where the word occurred.
-    * In a similar vein, :meth:`~text_data.index.WordIndex.word_counter`
-      returns a dictionary mapping the document index in which a word appeared
-      to the number of times it appeared in that document.
-    * :meth:`~text_data.index.WordIndex.most_common`
-      and :meth:`~text_data.index.WordIndex.max_word_count`
-      return information about the words appearing most frequently in the corpus.
-    * :meth:`~text_data.index.WordIndex.word_count`,
-      :meth:`~text_data.index.WordIndex.word_frequency`, and
-      :meth:`~text_data.index.WordIndex.odds_word`
-      return information about how often a word appeared in the corpus as
-      a whole.
-    * :meth:`~text_data.index.WordIndex.term_count`
-      and :meth:`~text_data.index.WordIndex.term_frequency`
-      return information about how often a word appeared *in a particular document*.
+    The statistics generally fit into four categories.
+    The first category computes statistics about how often a specific word appears
+    in the corpus as a whole. The second category computes statistics
+    about how often a specific word appears in a specific document.
+    The third and fourth categories echo those first two categories
+    but perform the statistics efficiently across the corpus as a whole,
+    creating 1-dimensional numpy arrays in the case of the word-corpus
+    statistics and 2-dimensional numpy arrays in the case of the word-document
+    statistics. Functions in these latter two categories all end in
+    :code:`_vector` and :code:`_matrix` respectively.
 
-    **Matrix and Vector Calculation**
+    Here's how those statistics map to one another:
 
-    These methods enable you to make efficient and parallelized calculations over the entire corpus.
-    The individual calculations are typically similar to the point estimates,
-    but instead of returning a single value, they return 1-dimensional
-    or 2-dimensional numpy arrays.
+    .. list-table:: Word Statistics
+        :widths: 40 40 40 40
+        :header-rows: 1
 
-    In every case, the rows of these arrays represent the unique words of the vocabulary,
+        * - Word-Corpus
+          - Word-Document
+          - Vector
+          - Matrix
+        * - :meth:`~text_data.index.WordIndex.word_count`
+          - :meth:`~text_data.index.WordIndex.term_count`
+          - :meth:`~text_data.index.WordIndex.word_count_vector`
+          - :meth:`~text_data.index.WordIndex.count_matrix`
+        * - :meth:`~text_data.index.WordIndex.word_frequency`
+          - :meth:`~text_data.index.WordIndex.term_frequency`
+          - :meth:`~text_data.index.WordIndex.word_freq_vector`
+          - :meth:`~text_data.index.WordIndex.frequency_matrix`
+        * - :meth:`~text_data.index.WordIndex.document_count`
+          -
+          - :meth:`~text_data.index.WordIndex.doc_count_vector`
+          -
+        * - :meth:`~text_data.index.WordIndex.document_frequency`
+          -
+          - :meth:`~text_data.index.WordIndex.doc_freq_vector`
+          -
+        * - :meth:`~text_data.index.WordIndex.idf`
+          -
+          - :meth:`~text_data.index.WordIndex.idf_vector`
+          -
+        * - :meth:`~text_data.index.WordIndex.odds_word`
+          - :meth:`~text_data.index.WordIndex.odds_document`
+          - :meth:`~text_data.index.WordIndex.odds_vector`
+          - :meth:`~text_data.index.WordIndex.odds_matrix`
+        * - :code:`__contains__`
+          - :meth:`~text_data.index.WordIndex.doc_contains`
+          -
+          - :meth:`~text_data.index.WordIndex.one_hot_matrix`
+        * -
+          -
+          -
+          - :meth:`~text_data.index.WordIndex.tfidf_matrix`
+
+    In the case of the vector and matrix calculations, the arrays
+    represent the unique words of the vocabulary,
     presented in sorted order. As a result, you can safely run
     element-wise calculations over the matrices.
-
-    There are currently two different shapes for these arrays.
-    The first is a 1-dimensional array where each result represents
-    a statistic about that individual word over the entire corpus.
-    These functions all end with the suffix :code:`_vector`.
-    The second is a 2-dimensional array where each cell represents
-    a statistic about that word in that particular document. These
-    functions all end in the suffix :code:`_matrix`.
-
-    As you can see, most of these functions map easily to the point estimates
-    mentioned above:
-
-    .. csv-table:: Vector Methods
-        :header: "Point Estimate", "Vector Function", "Matrix Function"
-        :widths: 50, 50, 50
-
-        ":meth:`~text_data.index.WordIndex.document_count`", ":meth:`~text_data.index.WordIndex.doc_count_vector`", ""
-        ":meth:`~text_data.index.WordIndex.document_frequency`", ":meth:`~text_data.index.WordIndex.doc_freq_vector`", ""
-        ":meth:`~text_data.index.WordIndex.idf`", ":meth:`~text_data.index.WordIndex.idf_vector`", ""
-        ":meth:`~text_data.index.WordIndex.word_count`", ":meth:`~text_data.index.WordIndex.word_count_vector`", ""
-        ":meth:`~text_data.index.WordIndex.word_frequency`", ":meth:`~text_data.index.WordIndex.word_freq_vector`", ""
-        ":meth:`~text_data.index.WordIndex.odds_word`", ":meth:`~text_data.index.WordIndex.odds_vector`", ""
-        ":meth:`~text_data.index.WordIndex.term_count`", "", ":meth:`~text_data.index.WordIndex.count_matrix`"
-        ":meth:`~text_data.index.WordIndex.term_frequency`", "", ":meth:`~text_data.index.WordIndex.frequency_matrix`"
-        ":code:`__contains__`", "", ":meth:`~text_data.index.WordIndex.one_hot_matrix`"
-
-    The one exception to this rule is :meth:`~text_data.index.WordIndex.tfidf_matrix`,
-    which computes term-document matrices of TF-IDF scores.
 
     In addition to the term vector and term-document matrix functions, there is
     :meth:`~text_data.index.WordIndex.get_top_words`, which is designed
@@ -480,15 +477,13 @@ class WordIndex:
         """
         return self.index.idf(word)
 
-    def docs_with_word(self, word: str) -> List[int]:
+    def docs_with_word(self, word: str) -> Set[int]:
         """Returns a list of all the documents containing a word.
 
         Example:
             >>> corpus = Corpus(["example document", "another document"])
-            >>> corpus.docs_with_word("document")
-            [0, 1]
-            >>> corpus.docs_with_word("another")
-            [1]
+            >>> assert corpus.docs_with_word("document") == {0, 1}
+            >>> assert corpus.docs_with_word("another") == {1}
 
         Args:
             word: The word you're looking up.
@@ -609,6 +604,25 @@ class WordIndex:
     # Word-Document Statistics
     #
     #   These provide statistics about words within a particular document.
+    def doc_contains(self, word: str, document: int) -> bool:
+        """States whether the given document contains the word.
+
+        Example:
+            >>> corpus = Corpus(["words", "more words"])
+            >>> corpus.doc_contains("more", 0)
+            False
+            >>> corpus.doc_contains("more", 1)
+            True
+
+        Args:
+            word: The word you're looking up.
+            document: The index of the document.
+
+        Raises:
+            ValueError: If the document you're looking up doesn't exist.
+        """
+        return self.index.doc_contains(word, document)
+
     def term_count(self, word: str, document: int) -> int:
         """Returns the total number of times a word appeared in a document.
 
@@ -640,8 +654,39 @@ class WordIndex:
             True
             >>> np.isclose(corpus.term_frequency("words", 0), 0.2)
             True
+
+        Args:
+            word: The word you're looking up
+            document: The index of the document
+
+        Raises:
+            ValueError: If the document you're looking up doesn't exist
         """
         return self.index.term_frequency(word, document)
+
+    def odds_document(self, word: str, document: int, sublinear: bool = False) -> float:
+        """Returns the odds of finding a word in a document.
+
+        This is the equivalent of :meth:`~text_data.index.WordIndex.odds_word`.
+        But insteasd of calculating items at the word-corpus level, the calculations
+        are performed at the word-document level.
+
+        Example:
+            >>> corpus = Corpus(["this is a document", "document two"])
+            >>> corpus.odds_document("document", 1)
+            1.0
+            >>> corpus.odds_document("document", 1, sublinear=True)
+            0.0
+
+        Args:
+            word: The word you're looking up
+            document: The index of the document
+            sublinear: If :code:`True`, returns the log-odds of finding the word in the document.
+
+        Raises:
+            ValueError: If the document doesn't exist.
+        """
+        return self.index.odds_document(word, document, sublinear)
 
     # Vector computations
     #
@@ -757,6 +802,49 @@ class WordIndex:
             True
         """
         return self.index.one_hot_matrix()
+
+    def odds_matrix(
+        self, sublinear: bool = False, add_k: Optional[float] = None
+    ) -> np.array:
+        r"""Returns the odds of finding a word in a document for every possible word-document pair.
+
+        Because not all words are likely to appear in all of the documents,
+        this implementation adds :code:`1` to all of the numerators before taking the
+        frequencies. So
+
+        :math:`O(w) = \frac{c_{i} + 1}{N + \vert V \vert}`
+
+        where :math:`\vert V \vert` is the total number of unique words in each document,
+        :math:`N` is the total number of total words in each document, and :math:`c_i`
+        is the count of a word in a document.
+
+        Example:
+            >>> corpus = Corpus(["example document", "another example"])
+            >>> corpus.odds_matrix()
+            array([[0.33333333, 1.        ],
+                   [1.        , 0.33333333],
+                   [1.        , 1.        ]])
+            >>> corpus.odds_matrix(sublinear=True)
+            array([[-1.5849625,  0.       ],
+                   [ 0.       , -1.5849625],
+                   [ 0.       ,  0.       ]])
+
+        Args:
+            sublinear: If :code:`True`, computes the log-odds.
+            add_k: This adds :code:`k` to each of the non-zero elements in the matrix.
+                Since :math:`\log{1} = 0`, this prevents 50 percent probabilities
+                from appearing to be the same as elements that don't exist.
+        """
+        count_matrix = self.count_matrix()
+        # find the number of unique words to add 1/|V| to each probability
+        # to avoid divide by zero problems
+        num_unique = np.count_nonzero(count_matrix, axis=0)
+        num_words = count_matrix.sum(axis=0)
+        nonzero_freq = (count_matrix + 1.0) / (num_unique + num_words)
+        raw_odds = nonzero_freq / (1.0 - nonzero_freq)
+        if sublinear:
+            return np.log2(raw_odds)
+        return raw_odds
 
     def tfidf_matrix(
         self,
@@ -1019,6 +1107,14 @@ class Corpus(WordIndex):
     adding a mini-index. This allows you to technically perform
     calculations in-memory on larger databases.
 
+    You can also initialize a :code:`Corpus` object by using the
+    :meth:`~text_data.index.Corpus.slice`, :meth:`~text_data.index.Corpus.copy`,
+    :meth:`~text_data.index.Corpus.split_off`, or :meth:`~text_data.index.Corpus.concatenate`
+    methods. These methods work identically to their equivalent methods in
+    :class:`text_data.index.WordIndex` while updating extra data that
+    the corpus has, updating n-gram indexes, and automatically re-indexing the
+    corpus.
+
     **Updating Data**
 
     There are two methods for updating or adding data to the :code:`Corpus`.
@@ -1060,7 +1156,8 @@ class Corpus(WordIndex):
         documents: A list of all the raw, non-tokenized documents in the corpus.
         tokenizer: A function that converts a list of strings (one of the documents
             from documents into a list of words and a list of the character-level
-            positions where the words are located in the raw text)
+            positions where the words are located in the raw text). See :mod:`text_data.tokenize`
+            for details.
         tokenized_documents: A list of the tokenized documents (each a list of words)
         ngram_indexes: A list of :class:`~text_data.index.WordIndex` objects
             for multi-word (n-gram) indexes. See :meth:`~text_data.index.Corpus.add_ngram_index`
@@ -1074,7 +1171,7 @@ class Corpus(WordIndex):
 
     Args:
         documents: A list of the raw, un-tokenized texts.
-        tokenizer: A function to tokenize the documents. See :py:mod:`text_data.tokenize` for details.
+        tokenizer: A function to tokenize the documents. See :mod:`text_data.tokenize` for details.
         sep: The separator you want to use for computing n-grams. See :meth:`~text_data.index.Corpus.add_ngram_index`
             for details.
         prefix: The prefix you want to use for n-grams. See :meth:`~text_data.index.Corpus.add_ngram_index`
@@ -1248,21 +1345,146 @@ class Corpus(WordIndex):
             "You can not use `add_documents` with a `Corpus`. Use `update` instead."
         )
 
-    # def slice(self, indexes: Set[int]) -> Corpus:
-    #     """This creates a :code:`Corpus` object only including the documents listed.
+    def _copy_standard(self, other: Corpus):
+        """This copies common information. It's internal to `copy`, `slice`, `split_off`, and `concatenate`."""
+        other.tokenizer = self.tokenizer
+        other.ngram_sep = self.ngram_sep
+        other.ngram_prefix = self.ngram_prefix
+        other.ngram_suffix = self.ngram_suffix
 
-    #     This overrides the method in :meth:`text_data.index.WordIndex`, which
-    #     does the same thing (but without making changes to the underlying document set).
+    def concatenate(self, other: Corpus) -> Corpus:  # type: ignore
+        """This combines two :code:`Corpus` objects into one, much like :meth:`text_data.index.WordIndex.concatenate`.
 
-    #     Args:
-    #         indexes: A set of document indexes you want to have in the new index.
-        
-    #     Example:
-    #         >>> corpus = Corpus(["example document", "another example", "yet another"])
-    #         >>> sliced_corpus = corpus.slice([1])
-    #         >>> len(sliced_corpus)
-    #         1
-    #         >>> sliced
+        However, the new :code:`Corpus` has data from this corpus, including n-gram data.
+        Because of this, the two :code:`Corpus` objects must have the same keys for their
+        n-gram dictionaries.
+
+        Example:
+            >>> corpus_1 = Corpus(["i am an example"])
+            >>> corpus_2 = Corpus(["i am too"])
+            >>> corpus_1.add_ngram_index(n=2)
+            >>> corpus_2.add_ngram_index(n=2)
+            >>> combined_corpus = corpus_1.concatenate(corpus_2)
+            >>> combined_corpus.most_common()
+            [('am', 2), ('i', 2), ('an', 1), ('example', 1), ('too', 1)]
+            >>> combined_corpus.ngram_indexes[2].most_common()
+            [('i am', 2), ('am an', 1), ('am too', 1), ('an example', 1)]
+
+        Args:
+            other: another :code:`Corpus` object with the same ngram indexes.
+
+        Raises:
+            ValueError: if the n-gram indexes between the two corpuses are not the same.
+        """
+        new_corpus = Corpus([])
+        new_corpus.index = self.index.concat(self.index, other.index, ignore_index=True)
+        self._copy_standard(new_corpus)
+        for n, index in self.ngram_indexes.items():
+            new_corpus.ngram_indexes[n] = index.concatenate(other.ngram_indexes[n])
+        new_corpus.documents = self.documents + other.documents
+        new_corpus.tokenized_documents = (
+            self.tokenized_documents + other.tokenized_documents
+        )
+        return new_corpus
+
+    def copy(self) -> Corpus:
+        """This creates a shallow copy of a :class:`Corpus` object.
+
+        It extends the contents of :class:`Corpus` to also store data about
+        the objects themselves.
+        """
+        new_index = Corpus([])
+        new_index.index = new_index.copy()
+        new_index.documents = self.documents.copy()
+        new_index.tokenized_documents = self.tokenized_documents.copy()
+        new_index.ngram_indexes = {
+            n: index.copy() for n, index in self.ngram_indexes.items()
+        }
+        self._copy_standard(new_index)
+        return new_index
+
+    def slice(self, indexes: Set[int]) -> Corpus:
+        """This creates a :code:`Corpus` object only including the documents listed.
+
+        This overrides the method in :meth:`text_data.index.WordIndex`, which
+        does the same thing (but without making changes to the underlying document set).
+        This also creates slices of any of the n-gram indexes you have created.
+
+        Note:
+            This also changes the indexes for the new corpus so they all go from
+            0 to :code:`len(indexes)`.
+
+        Args:
+            indexes: A set of document indexes you want to have in the new index.
+
+        Example:
+            >>> corpus = Corpus(["example document", "another example", "yet another"])
+            >>> corpus.add_ngram_index(n=2)
+            >>> sliced_corpus = corpus.slice({1})
+            >>> len(sliced_corpus)
+            1
+            >>> sliced_corpus.most_common()
+            [('another', 1), ('example', 1)]
+            >>> sliced_corpus.ngram_indexes[2].most_common()
+            [('another example', 1)]
+        """
+        new_index = Corpus([])
+        self._copy_standard(new_index)
+        new_index.index = self.index.slice(indexes)
+        new_index.reset_index()
+        for n, index in self.ngram_indexes.items():
+            new_index.ngram_indexes[n] = index.slice(indexes)
+            new_index.ngram_indexes[n].reset_index()
+        documents, tokenized_docs = [], []
+        sorted_indexes = sorted(indexes)
+        for idx in sorted_indexes:
+            documents.append(self.documents[idx])
+            tokenized_docs.append(self.tokenized_documents[idx])
+        new_index.documents = documents
+        new_index.tokenized_documents = tokenized_docs
+        return new_index
+
+    def split_off(self, indexes: Set[int]) -> Corpus:
+        """This operates like :meth:`~text_data.index.WordIndex.split_off`.
+
+        But it additionally maintains the state of the :class:`Corpus` data,
+        similar to how :meth:`~text_data.index.Corpus.slice` works.
+
+        Example:
+            >>> corpus = Corpus(["i am an example", "so am i"])
+            >>> sliced_data = corpus.split_off({0})
+            >>> corpus.documents
+            ['so am i']
+            >>> sliced_data.documents
+            ['i am an example']
+            >>> corpus.most_common()
+            [('am', 1), ('i', 1), ('so', 1)]
+        """
+        new_index = Corpus([])
+        self._copy_standard(new_index)
+        new_index.index = super().split_off(indexes)
+        new_index.reset_index()
+        self.reset_index()
+        for n, index in self.ngram_indexes.items():
+            new_index.ngram_indexes[n] = index.split_off(indexes)
+            new_index.ngram_indexes[n].reset_index()
+            self.ngram_indexes[n].reset_index()
+        own_docs, own_tokenized = [], []
+        documents, tokenized_docs = [], []
+        # we have to match to the length of the documents because len(self)
+        # is tied to the length of the index, which is smaller now
+        for idx in range(len(self.documents)):
+            if idx in indexes:
+                documents.append(self.documents[idx])
+                tokenized_docs.append(self.tokenized_documents[idx])
+            else:
+                own_docs.append(self.documents[idx])
+                own_tokenized.append(self.tokenized_documents[idx])
+        new_index.documents = documents
+        new_index.tokenized_documents = tokenized_docs
+        self.documents = own_docs
+        self.tokenized_documents = own_tokenized
+        return new_index
 
     def update(self, new_documents: List[str]):
         """Adds new documents to the corpus's index and to the n-gram indices.
@@ -1620,16 +1842,16 @@ class Corpus(WordIndex):
                         if actual_start > 0:
                             results += "<b>&hellip;</b>"
                     if current_idx < item.raw_start:
-                        results += self._escape_html(
+                        results += core._escape_html(
                             sel_doc[current_idx : item.raw_start]
                         )
-                    block_text = self._escape_html(
+                    block_text = core._escape_html(
                         sel_doc[item.raw_start : item.raw_end]
                     )
                     results += f"<b>{block_text}</b>"
                     current_idx = item.raw_end
                 raw_end_window = max(current_idx, end_window)
-                results += self._escape_html(sel_doc[current_idx:raw_end_window])
+                results += core._escape_html(sel_doc[current_idx:raw_end_window])
                 if raw_end_window < len(sel_doc):
                     results += "<b>&hellip;</b>"
                 results += "</p>"
@@ -1808,19 +2030,8 @@ class Corpus(WordIndex):
 
         Internal for `display_document` and `display_documents`.
         """
-        content = self._escape_html(self.documents[doc_idx])
+        content = core._escape_html(self.documents[doc_idx])
         return f"<p><b>Document at index {doc_idx}</b></p><p>{content}</p>"
-
-    def _escape_html(self, raw_text: str) -> str:
-        # the first part of this is built on the idea that if the content
-        # contains html we shouldn't necessarily see that
-        # the extra symbols are because of weird pretty printing behavior from
-        # jupyter (see https://stackoverflow.com/questions/16089089/escaping-dollar-sign-in-ipython-notebook)
-        return (
-            html.escape(raw_text)
-            # https://blogueun.wordpress.com/2014/01/04/escaping-in-mathjax/
-            .replace("$", "<span class='tex2jax_ignore'>$</span>")
-        )
 
     def display_document(self, doc_idx: int) -> display.HTML:
         """Print an entire document, given its index.
