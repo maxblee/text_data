@@ -25,6 +25,7 @@ Tutorial and Usage Guide
    :maxdepth: 2
 
    installation
+   api_structure
    getting_started
    corpus
    exploration
