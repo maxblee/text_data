@@ -2,6 +2,9 @@
 
 *A tool for exploring and analyzing text data*
 
+
+[Read the documentation](https://docs.maxblee.com/text_data/)
+
 `text_data` is a lightweight, performant, and framework-independent tool for analyzing text data in Python. Requiring only `numpy` and
 `IPython`, it offers a suite of features that make it easy to
 search through documents, compute statistics on those documents,
