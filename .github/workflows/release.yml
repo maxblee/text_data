@@ -9,7 +9,6 @@ on:
 
 jobs:
   python-publish:
-    needs: build
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
