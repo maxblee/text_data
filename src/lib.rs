@@ -36,6 +36,7 @@ struct PositionalIndex {
     #[pyo3(get)]
     num_words: usize,
     /// A vector marking the length of documents
+    #[pyo3(get)]
     doc_lengths: BTreeMap<usize, usize>,
     /// The index after the last index in the document set
     next_idx: usize,

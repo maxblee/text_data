@@ -48,6 +48,11 @@ clean-test: ## remove test and coverage artifacts
 	rm -fr rust_htmlcov/
 	rm -fr .pytest_cache
 
+lint-py:
+	black .
+	flake8 text_data tests
+	mypy text_data
+
 lint: ## check style with pylint
 	cargo fmt
 	cargo clippy
@@ -82,7 +87,7 @@ docs: ## generate Sphinx HTML documentation, including API docs
 	$(BROWSER) docs/_build/html/index.html
 
 servedocs: docs ## compile the docs watching for changes
-	watchmedo shell-command -p '*.py;*.rst' -c '$(MAKE) -C docs html' -R -D .
+	watchmedo shell-command -p '*.py;*.rst;*.md' -c '$(MAKE) -C docs html' -R -D .
 
 release: dist ## package and upload a release
 	twine upload dist/*

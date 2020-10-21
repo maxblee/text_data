@@ -8,6 +8,7 @@ This enables you to take the outputs from any functions inside of
 """
 from typing import Any, List, Optional
 
+from IPython import display
 import numpy as np
 
 # this allows for global imports. ImportError will only be raised from inside
@@ -106,6 +107,36 @@ def render_multi_bar_chart(
     )
     return base_chart
 
+@core.requires_display_extra
+def histogram(
+    values: np.array,
+    x_label: str = "Score",
+    y_label: str = "Number of Documents",
+    x_scale: str = "linear",
+    y_scale: str = "linear",
+    max_bins: int = 100
+):
+    """Displays a histogram of values.
+
+    This can be really useful for debugging the lengths of documents.
+
+    Args:
+        values: A numpy array of quantitative values.
+        x_label: A label for the x-axis.
+        y_label: A label for the y-axis.
+        x_scale: A continuous scale type, defined by `altair <https://altair-viz.github.io/user_guide/generated/core/altair.Scale.html>`_.
+        y_scale: A continuous scale type, defined by `altair <https://altair-viz.github.io/user_guide/generated/core/altair.Scale.html>`_.
+        max_bins: The maximum number of histogram bins.
+    """
+    x = alt.X(
+        f"{x_label}:Q", bin=alt.Bin(maxbins=max_bins), title=x_label, scale=alt.Scale(type=x_scale)
+    )
+    y = alt.Y("count()", title=y_label, scale=alt.Scale(type=y_scale))
+    return (
+        alt.Chart(pd.DataFrame({x_label: values}))
+        .mark_bar()
+        .encode(x=x, y=y)
+    )
 
 @core.requires_display_extra
 def heatmap(
@@ -267,8 +298,8 @@ def display_score_tables(
         raise ValueError("There must be as many table names as there are columns")
     html = ""
     for doc_words, doc_scores, table_name in zip(words, scores, table_names):
-        html += display_score_table(words, scores, table_name)
-    return html
+        html += display_score_table(doc_words, doc_scores, table_name)
+    return display.HTML(html)
 
 
 def display_score_table(
@@ -305,4 +336,4 @@ def display_score_table(
     for count, (word, score) in enumerate(zip(words, scores)):
         html += f"<tr><td>{count + 1}.</td><td>{core._escape_html(word)}</td><td>{score}</td></tr>"
     html += "</tbody></table>"
-    return html
+    return display.HTML(html)

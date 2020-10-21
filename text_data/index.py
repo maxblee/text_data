@@ -81,8 +81,9 @@ class WordIndex:
 
     - :meth:`~text_data.index.WordIndex.copy` creates an identical copy of a :code:`WordIndex`
       object.
-    - :meth:`~text_data.index.WordIndex.slice` and :meth:`~text_data.index.WordIndex.split_off`
-      both take sets of document indexes and create new indexes with only those
+    - :meth:`~text_data.index.WordIndex.slice`, :meth:`~text_data.index.WordIndex.slice_many`,
+      and :meth:`~text_data.index.WordIndex.split_off`
+      all take sets of document indexes and create new indexes with only those
       documents.
     - :meth:`~text_data.index.WordIndex.add_documents` allows you to add new
       documents into an existing :code:`WordIndex` object.
@@ -105,6 +106,8 @@ class WordIndex:
       both return the unique words or phrases appearing in the index.
     * :attr:`~text_data.index.WordIndex.vocab_size` gets the number of unique words in the index.
     * :attr:`~text_data.index.WordIndex.num_words` gets the total number of words in the index.
+    * :attr:`~text_data.index.WordIndex.doc_lengths` gets a dictionary mapping documents to
+      the number of tokens, or words, they contain.
 
 
     **Word Statistics**
@@ -367,6 +370,24 @@ class WordIndex:
         """
         return self._from_index(self.index.split_off(indexes))
 
+    def slice_many(self, indexes_list: List[Set[int]]) -> List[WordIndex]:
+        """This operates like :meth:`~text_data.index.WordIndex.slice` but creates multiple :class:`~text_data.index.WordIndex` objects.
+
+        Example:
+            >>> corpus = Corpus(["example document", "another example", "yet another"])
+            >>> first, second, third = corpus.slice_many([{0}, {1}, {2}])
+            >>> first.documents
+            ['example document']
+            >>> second.documents
+            ['another example']
+            >>> third.documents
+            ['yet another']
+
+        Args:
+            indexes_list: A list of sets of indexes. See :meth:`text_data.index.WordIndex.slice` for details.
+        """
+        return [self.slice(indexes) for indexes in indexes_list]
+
     # Corpus Information
     # This section returns simple information about a corpus — how many
     # words are there, what the vocabulary is, etc.
@@ -417,6 +438,16 @@ class WordIndex:
             5
         """
         return self.index.num_words
+
+    @property
+    def doc_lengths(self) -> Dict[int, int]:
+        """Returns a dictionary mapping the document indices to their lengths.
+
+        Example:
+            >>> corpus = Corpus(["a cat and a dog", "a cat", ""])
+            >>> assert corpus.doc_lengths == {0: 5, 1: 2, 2: 0}
+        """
+        return self.index.doc_lengths
 
     # Point Estimates
     # This section contains point estimates for the index. This includes
@@ -1387,6 +1418,16 @@ class Corpus(WordIndex):
         )
         return new_corpus
 
+    def to_index(self) -> WordIndex:
+        """Converts a :class:`~text_data.index.Corpus` object into a :class:`~text_data.index.WordIndex` object.
+
+        :class:`~text_data.index.Corpus` objects are convenient because they allow
+        you to search across documents, in addition to computing statistics about them.
+        But sometimes, you don't need that, and the added convenience comes with extra
+        memory requirements.
+        """
+        return WordIndex._from_index(self.index)
+
     def copy(self) -> Corpus:
         """This creates a shallow copy of a :class:`Corpus` object.
 
@@ -1485,6 +1526,10 @@ class Corpus(WordIndex):
         self.documents = own_docs
         self.tokenized_documents = own_tokenized
         return new_index
+
+    def flatten(self) -> WordIndex:
+        """Flattens a Corpus, converting it into a :class:`~text_data.index.WordIndex`."""
+        return self.to_index().flatten()
 
     def update(self, new_documents: List[str]):
         """Adds new documents to the corpus's index and to the n-gram indices.
