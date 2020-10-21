@@ -961,6 +961,14 @@ lint = ["flake8", "mypy", "docutils-stubs"]
 test = ["pytest"]
 
 [[package]]
+name = "text-data-rs"
+version = "0.1.0"
+description = ""
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "toml"
 version = "0.10.1"
 description = "Python Library for Tom's Obvious, Minimal Language"
@@ -1085,7 +1093,7 @@ display = ["altair", "pandas"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "91f75157d4a7e85c8d315106ce58ff5271bd35b66db31d0c1efeac27e169c0b3"
+content-hash = "dccd4f521b0b5f9bc55e27bf88b0ae97441dc0c09688a1b37d57c1f3a79777a8"
 
 [metadata.files]
 alabaster = [
@@ -1615,6 +1623,12 @@ sphinxcontrib-qthelp = [
 sphinxcontrib-serializinghtml = [
     {file = "sphinxcontrib-serializinghtml-1.1.4.tar.gz", hash = "sha256:eaa0eccc86e982a9b939b2b82d12cc5d013385ba5eadcc7e4fed23f4405f77bc"},
     {file = "sphinxcontrib_serializinghtml-1.1.4-py2.py3-none-any.whl", hash = "sha256:f242a81d423f59617a8e5cf16f5d4d74e28ee9a66f9e5b637a18082991db5a9a"},
+]
+text-data-rs = [
+    {file = "text_data_rs-0.1.0-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:c4c20b2246c81bfe3b1aa62e4412f6147f8dc69de72f1f818b9f89d211e05ed6"},
+    {file = "text_data_rs-0.1.0-cp37-cp37m-macosx_10_7_x86_64.whl", hash = "sha256:5f7e121ec75e397813cb8f18abbfdaef2a8fa62a7f7640fa42152cdf3bd74a87"},
+    {file = "text_data_rs-0.1.0-cp38-cp38-macosx_10_7_x86_64.whl", hash = "sha256:8be73845cc6c75da31df279a62e81414acf4c2fdb38563c30534b5867d97bc3d"},
+    {file = "text_data_rs-0.1.0-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:88c9626d6bd2cbc63fd405b8ebad16b3e95e378d9e52f67588f4d45875122c39"},
 ]
 toml = [
     {file = "toml-0.10.1-py2.py3-none-any.whl", hash = "sha256:bda89d5935c2eac546d648028b9901107a595863cb36bae0c73ac804a9b4ce88"},
