@@ -12,6 +12,14 @@ Subpackages
 Submodules
 ----------
 
+text\_data.display module
+-------------------------
+
+.. automodule:: text_data.display
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 text\_data.index module
 -----------------------
 

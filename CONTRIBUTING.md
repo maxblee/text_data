@@ -4,14 +4,14 @@ Contributions are always welcome and will always be credited.
 
 ## Types of Contributions
 
-Please suggest all contributions at [https://www.github.com/{{cookiecutter.github_username}}/{{cookiecutter.project_slug}}/issues/](https://www.github.com/maxblee/text_data/issues/). 
+Please suggest all contributions at [https://www.github.com/maxblee/text_data/issues/](https://www.github.com/maxblee/text_data/issues/). 
 
 ### Report Bugs
 
 If you are reporting a bug, please specify:
 
-- Your operating system name and version
-- Your version of Python
+- Your operating system name and version (assuming you think it might be relevant)
+- Your version of Python (assuming you think it might be relevant)
 - A detailed list of steps required to replicate the issue.
 - Any other details that might be helpful.
 
